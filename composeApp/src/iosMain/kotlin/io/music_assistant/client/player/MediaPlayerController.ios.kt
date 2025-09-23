@@ -4,15 +4,14 @@ package io.music_assistant.client.player
 
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ObjCObjectVar
-import kotlinx.cinterop.alloc
-import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
-import platform.AVFoundation.AVAudioSession
+import platform.AVFAudio.AVAudioSession
+import platform.AVFAudio.AVAudioSessionCategoryPlayback
 import platform.AVFoundation.AVPlayer
 import platform.AVFoundation.AVPlayerItem
 import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
-import platform.AVFoundation.CMTimeMakeWithSeconds
-import platform.AVFoundation.kCMTimeZero
+import platform.CoreMedia.CMTimeMakeWithSeconds
+import platform.CoreMedia.kCMTimeZero
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.Foundation.NSNotification
 import platform.Foundation.NSNotificationCenter
@@ -28,8 +27,6 @@ import platform.MediaPlayer.MPRemoteCommandHandlerStatus
 import platform.MediaPlayer.MPRemoteCommandHandlerStatusSuccess
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
-import platform.Foundation.NSMutableDictionary
-import platform.Foundation.setValue
 
 actual class MediaPlayerController actual constructor(platformContext: PlatformContext) {
     private var player: AVPlayer? = null
@@ -41,12 +38,12 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
     }
 
     private fun configureAudioSession() {
-        memScoped {
-            val session = AVAudioSession.sharedInstance()
-            val error: CPointer<ObjCObjectVar<platform.Foundation.NSError?>> = alloc<ObjCObjectVar<platform.Foundation.NSError?>>().ptr
-            // Use legacy API for broad iOS compatibility
-            session.setCategory(AVAudioSessionCategoryPlayback, error)
-            session.setActive(true, error)
+        try {
+            AVAudioSession.sharedInstance().setCategory(AVAudioSessionCategoryPlayback, null)
+            AVAudioSession.sharedInstance().setActive(true, null)
+        } catch (e: Exception) {
+            // Log error
+            println("Failed to set up audio session: ${e.message}")
         }
     }
 
@@ -54,30 +51,29 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         val center = MPRemoteCommandCenter.sharedCommandCenter()
         center.playCommand.addTargetWithHandler {
             start()
-            MPRemoteCommandHandlerStatusSuccess
+            MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess
         }
         center.pauseCommand.addTargetWithHandler {
             pause()
-            MPRemoteCommandHandlerStatusSuccess
+            MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess
         }
         center.togglePlayPauseCommand.addTargetWithHandler {
             if (isPlaying()) pause() else start()
-            MPRemoteCommandHandlerStatusSuccess
+            MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess
         }
     }
 
     private fun updateNowPlaying(elapsedSeconds: Double? = null, durationSeconds: Double? = null, rate: Double? = null) {
         val infoCenter = MPNowPlayingInfoCenter.defaultCenter()
-        val map = (infoCenter.nowPlayingInfo?.toMutableMap() ?: mutableMapOf()).toMutableMap()
-        val dict = NSMutableDictionary()
-        // title placeholder; real metadata can be wired later from queue
-        dict.setValue("Music Assistant", forKey = MPMediaItemPropertyTitle)
-        elapsedSeconds?.let { dict.setValue(it, forKey = MPNowPlayingInfoPropertyElapsedPlaybackTime) }
-        durationSeconds?.let { dict.setValue(it, forKey = MPMediaItemPropertyPlaybackDuration) }
-        rate?.let { dict.setValue(it, forKey = MPNowPlayingInfoPropertyPlaybackRate) }
-        // Merge existing fields to keep artwork if set elsewhere
-        map.forEach { (k, v) -> dict.setValue(v, forKey = k as String) }
-        infoCenter.nowPlayingInfo = dict
+        val nowPlayingInfo = mutableMapOf<Any?, Any>()
+        nowPlayingInfo[MPMediaItemPropertyTitle] = "Music Assistant" // Placeholder
+        elapsedSeconds?.let { nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = it }
+        durationSeconds?.let { nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = it }
+        rate?.let { nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = it }
+
+        infoCenter.nowPlayingInfo = infoCenter.nowPlayingInfo?.let {
+            it.toMutableMap().apply { putAll(nowPlayingInfo) }
+        } ?: nowPlayingInfo
     }
 
     actual fun prepare(
@@ -147,11 +143,15 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         runOnMain {
             val time = CMTimeMakeWithSeconds(seconds.toDouble(), preferredTimescale = 600)
             player?.seekToTime(time)
-            updateNowPlaying(elapsedSeconds = seconds.toDouble(), durationSeconds = durationSeconds(), rate = if (isPlaying()) 1.0 else 0.0)
+            updateNowPlaying(
+                elapsedSeconds = seconds.toDouble(),
+                durationSeconds = durationSeconds(),
+                rate = if (isPlaying()) 1.0 else 0.0
+            )
         }
     }
 
-    actual fun isPlaying(): Boolean = (player?.rate ?: 0f) > 0f
+    actual fun isPlaying(): Boolean = player?.rate != 0.0 && player?.error == null
 
     actual fun release() {
         runOnMain {
