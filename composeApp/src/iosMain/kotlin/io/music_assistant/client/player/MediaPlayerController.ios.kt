@@ -6,6 +6,11 @@ package io.music_assistant.client.player
 import platform.AVFoundation.AVPlayer
 import platform.AVFoundation.AVPlayerItem
 import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
+import platform.AVFoundation.play
+import platform.AVFoundation.pause
+import platform.AVFoundation.currentTime
+import platform.AVFoundation.seekToTime
+import platform.AVFoundation.duration
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.Foundation.NSNotificationCenter
@@ -28,14 +33,14 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         runOnMain {
             releaseInternal()
             val url = toNSURL(pathSource)
-            val item = AVPlayerItem(URL = url)
-            playerItem = item
-            player = AVPlayer(playerItem = item)
+            val p = AVPlayer(uRL = url)
+            player = p
+            playerItem = p.currentItem
 
             // Notify completion when item finishes
             endObserver = NSNotificationCenter.defaultCenter.addObserverForName(
                 name = AVPlayerItemDidPlayToEndTimeNotification,
-                `object` = item,
+                `object` = playerItem,
                 queue = null
             ) { _ ->
                 isPlayingInternal = false
