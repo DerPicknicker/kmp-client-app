@@ -1,4 +1,5 @@
 @file:Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
 
 package io.music_assistant.client.player
 
@@ -8,8 +9,9 @@ import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.Foundation.NSNotificationCenter
-import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSURL
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_main_queue
 
 actual class MediaPlayerController actual constructor(platformContext: PlatformContext) {
     private var player: AVPlayer? = null
@@ -34,7 +36,7 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
             endObserver = NSNotificationCenter.defaultCenter.addObserverForName(
                 name = AVPlayerItemDidPlayToEndTimeNotification,
                 `object` = item,
-                queue = NSOperationQueue.mainQueue
+                queue = null
             ) { _ ->
                 isPlayingInternal = false
                 this.listener?.onAudioCompleted()
@@ -106,7 +108,7 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
     }
 
     private fun runOnMain(block: () -> Unit) {
-        NSOperationQueue.mainQueue.addOperation(block)
+        dispatch_async(dispatch_get_main_queue(), block)
     }
 
     private fun toNSURL(pathSource: String): NSURL {
