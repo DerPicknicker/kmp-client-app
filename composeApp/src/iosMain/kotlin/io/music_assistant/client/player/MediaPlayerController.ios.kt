@@ -33,14 +33,14 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         runOnMain {
             releaseInternal()
             val url = toNSURL(pathSource)
-            val p = AVPlayer(uRL = url)
-            player = p
-            playerItem = p.currentItem
+            val item = AVPlayerItem(uRL = url)
+            playerItem = item
+            player = AVPlayer(playerItem = item)
 
             // Notify completion when item finishes
             endObserver = NSNotificationCenter.defaultCenter.addObserverForName(
                 name = AVPlayerItemDidPlayToEndTimeNotification,
-                `object` = playerItem,
+                `object` = item,
                 queue = null
             ) { _ ->
                 isPlayingInternal = false
