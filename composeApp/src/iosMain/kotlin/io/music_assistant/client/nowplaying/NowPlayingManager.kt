@@ -71,7 +71,7 @@ class NowPlayingManager(
     private fun configureRemoteCommandCenter() {
         val center = MPRemoteCommandCenter.sharedCommandCenter()
 
-        fun MPRemoteCommand.setHandler(handler: (MPRemoteCommandEvent) -> MPRemoteCommandHandlerStatus) {
+        fun MPRemoteCommand.setHandler(handler: (MPRemoteCommandEvent?) -> MPRemoteCommandHandlerStatus) {
             addTargetWithHandler { event -> handler(event) }
         }
 
@@ -164,7 +164,7 @@ class NowPlayingManager(
 
     private fun fetchArtwork(urlString: String, onResult: (MPMediaItemArtwork?) -> Unit) {
         val url = NSURL.URLWithString(urlString) ?: run { onResult(null); return }
-        val task = NSURLSession.sharedSession.dataTaskWithURL(url = url, completionHandler = { data: NSData?, _: NSURLResponse?, _: NSError? ->
+        val task = NSURLSession.sharedSession.dataTaskWithURL(url) { data: NSData?, _: NSURLResponse?, _: NSError? ->
             if (data == null) {
                 onResult(null)
                 return@dataTaskWithURL
@@ -175,7 +175,7 @@ class NowPlayingManager(
                 MPMediaItemArtwork(image = img)
             }
             onResult(artwork)
-        })
+        }
         task.resume()
     }
 }
