@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import platform.Foundation.NSURL
 import platform.Foundation.NSData
+import platform.Foundation.create
 import platform.MediaPlayer.MPChangePlaybackPositionCommandEvent
 import platform.MediaPlayer.MPMediaItemArtwork
 import platform.MediaPlayer.MPMediaItemPropertyAlbumTitle
@@ -197,7 +198,7 @@ class NowPlayingManager(
     private fun bytesToArtwork(bytes: ByteArray): MPMediaItemArtwork? {
         return try {
             val data: NSData = bytes.usePinned { pinned ->
-                NSData(bytes = pinned.addressOf(0), length = bytes.size.toULong())
+                NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
             }
             val image = UIImage(data = data)
             image?.let { MPMediaItemArtwork(image = it) }
