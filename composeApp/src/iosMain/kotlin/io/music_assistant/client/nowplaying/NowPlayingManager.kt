@@ -10,7 +10,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import platform.Foundation.NSData
 import platform.Foundation.NSError
-import platform.Foundation.NSNumber
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLResponse
 import platform.Foundation.NSURLSession
@@ -28,11 +27,11 @@ import platform.MediaPlayer.MPRemoteCommand
 import platform.MediaPlayer.MPRemoteCommandCenter
 import platform.MediaPlayer.MPRemoteCommandEvent
 import platform.MediaPlayer.MPRemoteCommandHandlerStatus
+import platform.MediaPlayer.MPRemoteCommandHandlerStatusCommandFailed
+import platform.MediaPlayer.MPRemoteCommandHandlerStatusSuccess
 import platform.UIKit.UIImage
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
-import platform.Foundation.NSMutableDictionary
-import platform.Foundation.setValue
 
 /**
  * iOS Now Playing and Remote Command Center integration.
@@ -72,48 +71,48 @@ class NowPlayingManager(
     private fun configureRemoteCommandCenter() {
         val center = MPRemoteCommandCenter.sharedCommandCenter()
 
-        fun MPRemoteCommand.setHandler(handler: (MPRemoteCommandEvent?) -> MPRemoteCommandHandlerStatus) {
+        fun MPRemoteCommand.setHandler(handler: (MPRemoteCommandEvent) -> MPRemoteCommandHandlerStatus) {
             addTargetWithHandler { event -> handler(event) }
         }
 
         center.togglePlayPauseCommand.enabled = true
         center.togglePlayPauseCommand.setHandler {
             currentPlayer?.let { dataSource.playerAction(it, PlayerAction.TogglePlayPause) }
-            MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess
+            MPRemoteCommandHandlerStatusSuccess
         }
 
         center.playCommand.enabled = true
         center.playCommand.setHandler {
             currentPlayer?.let { dataSource.playerAction(it, PlayerAction.TogglePlayPause) }
-            MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess
+            MPRemoteCommandHandlerStatusSuccess
         }
 
         center.pauseCommand.enabled = true
         center.pauseCommand.setHandler {
             currentPlayer?.let { dataSource.playerAction(it, PlayerAction.TogglePlayPause) }
-            MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess
+            MPRemoteCommandHandlerStatusSuccess
         }
 
         center.nextTrackCommand.enabled = true
         center.nextTrackCommand.setHandler {
             currentPlayer?.let { dataSource.playerAction(it, PlayerAction.Next) }
-            MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess
+            MPRemoteCommandHandlerStatusSuccess
         }
 
         center.previousTrackCommand.enabled = true
         center.previousTrackCommand.setHandler {
             currentPlayer?.let { dataSource.playerAction(it, PlayerAction.Previous) }
-            MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess
+            MPRemoteCommandHandlerStatusSuccess
         }
 
         center.changePlaybackPositionCommand?.let { command ->
             command.enabled = true
             command.addTargetWithHandler { event ->
                 val evt = event as? MPChangePlaybackPositionCommandEvent
-                val seconds = evt?.positionTime ?: return@addTargetWithHandler MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusCommandFailed
+                val seconds = evt?.positionTime ?: return@addTargetWithHandler MPRemoteCommandHandlerStatusCommandFailed
                 val ms = (seconds * 1000.0).toLong()
                 currentPlayer?.let { dataSource.playerAction(it, PlayerAction.SeekTo(ms)) }
-                MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess
+                MPRemoteCommandHandlerStatusSuccess
             }
         }
     }
@@ -129,13 +128,13 @@ class NowPlayingManager(
         val playing = playerData.player.isPlaying
         val imageUrl = track?.imageInfo?.url(serverUrl)
 
-        val info = NSMutableDictionary()
-        title?.let { info.setValue(it, forKey = MPMediaItemPropertyTitle) }
-        artist?.let { info.setValue(it, forKey = MPMediaItemPropertyArtist) }
-        album?.let { info.setValue(it, forKey = MPMediaItemPropertyAlbumTitle) }
-        durationMs?.let { info.setValue(NSNumber.numberWithDouble(it.toDouble() / 1000.0), forKey = MPMediaItemPropertyPlaybackDuration) }
-        elapsedMs?.let { info.setValue(NSNumber.numberWithDouble(it.toDouble() / 1000.0), forKey = MPNowPlayingInfoPropertyElapsedPlaybackTime) }
-        info.setValue(NSNumber.numberWithDouble(if (playing) 1.0 else 0.0), forKey = MPNowPlayingInfoPropertyPlaybackRate)
+        val info = mutableMapOf<Any?, Any?>()
+        title?.let { info[MPMediaItemPropertyTitle] = it }
+        artist?.let { info[MPMediaItemPropertyArtist] = it }
+        album?.let { info[MPMediaItemPropertyAlbumTitle] = it }
+        durationMs?.let { info[MPMediaItemPropertyPlaybackDuration] = it.toDouble() / 1000.0 }
+        elapsedMs?.let { info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = it.toDouble() / 1000.0 }
+        info[MPNowPlayingInfoPropertyPlaybackRate] = if (playing) 1.0 else 0.0
 
         // Apply base metadata immediately
         setNowPlayingInfo(info)
@@ -144,7 +143,7 @@ class NowPlayingManager(
         if (!imageUrl.isNullOrBlank()) {
             fetchArtwork(imageUrl) { artwork ->
                 if (artwork != null) {
-                    info.setValue(artwork, forKey = MPMediaItemPropertyArtwork)
+                    info[MPMediaItemPropertyArtwork] = artwork
                     setNowPlayingInfo(info)
                 }
             }
@@ -157,7 +156,7 @@ class NowPlayingManager(
         }
     }
 
-    private fun setNowPlayingInfo(info: NSMutableDictionary) {
+    private fun setNowPlayingInfo(info: Map<Any?, *>) {
         dispatch_async(dispatch_get_main_queue()) {
             MPNowPlayingInfoCenter.defaultCenter().nowPlayingInfo = info
         }
@@ -165,7 +164,7 @@ class NowPlayingManager(
 
     private fun fetchArtwork(urlString: String, onResult: (MPMediaItemArtwork?) -> Unit) {
         val url = NSURL.URLWithString(urlString) ?: run { onResult(null); return }
-        val task = NSURLSession.sharedSession.dataTaskWithURL(url) { data: NSData?, _: NSURLResponse?, _: NSError? ->
+        val task = NSURLSession.sharedSession.dataTaskWithURL(url = url, completionHandler = { data: NSData?, _: NSURLResponse?, _: NSError? ->
             if (data == null) {
                 onResult(null)
                 return@dataTaskWithURL
@@ -176,7 +175,7 @@ class NowPlayingManager(
                 MPMediaItemArtwork(image = img)
             }
             onResult(artwork)
-        }
+        })
         task.resume()
     }
 }
