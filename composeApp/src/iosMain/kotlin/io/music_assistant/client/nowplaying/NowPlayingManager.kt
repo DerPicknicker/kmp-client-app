@@ -20,6 +20,8 @@ import platform.MediaPlayer.MPMediaItemPropertyTitle
 import platform.MediaPlayer.MPNowPlayingInfoCenter
 import platform.MediaPlayer.MPNowPlayingInfoPropertyElapsedPlaybackTime
 import platform.MediaPlayer.MPNowPlayingInfoPropertyPlaybackRate
+import platform.MediaPlayer.MPNowPlayingPlaybackStatePaused
+import platform.MediaPlayer.MPNowPlayingPlaybackStatePlaying
 import platform.MediaPlayer.MPRemoteCommand
 import platform.MediaPlayer.MPRemoteCommandCenter
 import platform.MediaPlayer.MPRemoteCommandEvent
@@ -139,6 +141,8 @@ class NowPlayingManager(
         // Apply base metadata immediately
         log.i { "Update Now Playing: title=$title, artist=$artist, album=$album, playing=$playing" }
         setNowPlayingInfo(info)
+        // Explicitly set playback state to help presentation
+        MPNowPlayingInfoCenter.defaultCenter().playbackState = if (playing) MPNowPlayingPlaybackStatePlaying else MPNowPlayingPlaybackStatePaused
 
         // Load artwork asynchronously if available
         if (!imageUrl.isNullOrBlank()) {
