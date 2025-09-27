@@ -1,5 +1,6 @@
 package io.music_assistant.client.nowplaying
 
+import co.touchlab.kermit.Logger
 import io.music_assistant.client.data.MainDataSource
 import io.music_assistant.client.data.model.client.PlayerData
 import io.music_assistant.client.ui.compose.main.PlayerAction
@@ -40,6 +41,7 @@ class NowPlayingManager(
     override val coroutineContext = Dispatchers.Main + job
 
     private var currentPlayer: PlayerData? = null
+    private val log = Logger.withTag("NowPlaying")
 
     init {
         // Start observing player state and configure command center
@@ -61,6 +63,7 @@ class NowPlayingManager(
 
     private fun configureRemoteCommandCenter() {
         val center = MPRemoteCommandCenter.sharedCommandCenter()
+        log.i { "Configuring remote command center" }
 
         fun MPRemoteCommand.setHandler(handler: (MPRemoteCommandEvent?) -> MPRemoteCommandHandlerStatus) {
             addTargetWithHandler { event -> handler(event) }
@@ -68,30 +71,35 @@ class NowPlayingManager(
 
         center.togglePlayPauseCommand.enabled = true
         center.togglePlayPauseCommand.setHandler {
+            log.i { "Toggle play/pause" }
             currentPlayer?.let { dataSource.playerAction(it, PlayerAction.TogglePlayPause) }
             MPRemoteCommandHandlerStatusSuccess
         }
 
         center.playCommand.enabled = true
         center.playCommand.setHandler {
+            log.i { "Play" }
             currentPlayer?.let { dataSource.playerAction(it, PlayerAction.TogglePlayPause) }
             MPRemoteCommandHandlerStatusSuccess
         }
 
         center.pauseCommand.enabled = true
         center.pauseCommand.setHandler {
+            log.i { "Pause" }
             currentPlayer?.let { dataSource.playerAction(it, PlayerAction.TogglePlayPause) }
             MPRemoteCommandHandlerStatusSuccess
         }
 
         center.nextTrackCommand.enabled = true
         center.nextTrackCommand.setHandler {
+            log.i { "Next" }
             currentPlayer?.let { dataSource.playerAction(it, PlayerAction.Next) }
             MPRemoteCommandHandlerStatusSuccess
         }
 
         center.previousTrackCommand.enabled = true
         center.previousTrackCommand.setHandler {
+            log.i { "Previous" }
             currentPlayer?.let { dataSource.playerAction(it, PlayerAction.Previous) }
             MPRemoteCommandHandlerStatusSuccess
         }
@@ -102,6 +110,7 @@ class NowPlayingManager(
                 val evt = event as? MPChangePlaybackPositionCommandEvent
                 val seconds = evt?.positionTime ?: return@addTargetWithHandler MPRemoteCommandHandlerStatusCommandFailed
                 val ms = (seconds * 1000.0).toLong()
+                log.i { "Seek to $ms" }
                 currentPlayer?.let { dataSource.playerAction(it, PlayerAction.SeekTo(ms)) }
                 MPRemoteCommandHandlerStatusSuccess
             }
@@ -128,6 +137,7 @@ class NowPlayingManager(
         info[MPNowPlayingInfoPropertyPlaybackRate] = if (playing) 1.0 else 0.0
 
         // Apply base metadata immediately
+        log.i { "Update Now Playing: title=$title, artist=$artist, album=$album, playing=$playing" }
         setNowPlayingInfo(info)
 
         // Load artwork asynchronously if available
