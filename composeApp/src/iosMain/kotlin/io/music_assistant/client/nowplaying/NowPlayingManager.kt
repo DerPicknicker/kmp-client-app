@@ -10,6 +10,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import platform.Foundation.NSURL
+import platform.Foundation.NSData
 import platform.MediaPlayer.MPChangePlaybackPositionCommandEvent
 import platform.MediaPlayer.MPMediaItemArtwork
 import platform.MediaPlayer.MPMediaItemPropertyAlbumTitle
@@ -20,6 +21,7 @@ import platform.MediaPlayer.MPMediaItemPropertyTitle
 import platform.MediaPlayer.MPNowPlayingInfoCenter
 import platform.MediaPlayer.MPNowPlayingInfoPropertyElapsedPlaybackTime
 import platform.MediaPlayer.MPNowPlayingInfoPropertyPlaybackRate
+import platform.MediaPlayer.MPNowPlayingInfoPropertyIsLiveStream
 import platform.MediaPlayer.MPNowPlayingPlaybackStatePaused
 import platform.MediaPlayer.MPNowPlayingPlaybackStatePlaying
 import platform.MediaPlayer.MPRemoteCommand
@@ -28,6 +30,14 @@ import platform.MediaPlayer.MPRemoteCommandEvent
 import platform.MediaPlayer.MPRemoteCommandHandlerStatus
 import platform.MediaPlayer.MPRemoteCommandHandlerStatusCommandFailed
 import platform.MediaPlayer.MPRemoteCommandHandlerStatusSuccess
+import platform.UIKit.UIImage
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.refTo
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.darwin.Darwin
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.utils.io.core.toByteArray
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
@@ -111,9 +121,9 @@ class NowPlayingManager(
             command.addTargetWithHandler { event ->
                 val evt = event as? MPChangePlaybackPositionCommandEvent
                 val seconds = evt?.positionTime ?: return@addTargetWithHandler MPRemoteCommandHandlerStatusCommandFailed
-                val ms = (seconds * 1000.0).toLong()
-                log.i { "Seek to $ms" }
-                currentPlayer?.let { dataSource.playerAction(it, PlayerAction.SeekTo(ms)) }
+                val sec = seconds.toLong()
+                log.i { "Seek to $sec s" }
+                currentPlayer?.let { dataSource.playerAction(it, PlayerAction.SeekTo(sec)) }
                 MPRemoteCommandHandlerStatusSuccess
             }
         }
@@ -137,6 +147,7 @@ class NowPlayingManager(
         durationMs?.let { info[MPMediaItemPropertyPlaybackDuration] = it.toDouble() / 1000.0 }
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedMs.toDouble() / 1000.0
         info[MPNowPlayingInfoPropertyPlaybackRate] = if (playing) 1.0 else 0.0
+        info[MPNowPlayingInfoPropertyIsLiveStream] = false
 
         // Apply base metadata immediately
         log.i { "Update Now Playing: title=$title, artist=$artist, album=$album, playing=$playing" }
@@ -168,8 +179,29 @@ class NowPlayingManager(
     }
 
     private fun fetchArtwork(urlString: String, onResult: (MPMediaItemArtwork?) -> Unit) {
-        // Network fetch omitted for portability; proceed without artwork
-        onResult(null)
+        // Lightweight fetch using Ktor Darwin
+        kotlinx.coroutines.GlobalScope.launch(Dispatchers.Default) {
+            try {
+                val client = HttpClient(Darwin)
+                val channel = client.get(urlString).bodyAsChannel()
+                val bytes = channel.readRemaining().readBytes()
+                client.close()
+                val artwork = bytesToArtwork(bytes)
+                onResult(artwork)
+            } catch (_: Throwable) {
+                onResult(null)
+            }
+        }
+    }
+
+    private fun bytesToArtwork(bytes: ByteArray): MPMediaItemArtwork? {
+        return try {
+            val data: NSData = memScoped { NSData.create(bytes = bytes.refTo(0), length = bytes.size.toULong()) }
+            val image = UIImage(data = data)
+            image?.let { MPMediaItemArtwork(image = it) }
+        } catch (_: Throwable) {
+            null
+        }
     }
 }
 
