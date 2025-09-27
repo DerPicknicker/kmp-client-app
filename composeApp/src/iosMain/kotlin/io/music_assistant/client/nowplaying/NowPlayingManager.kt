@@ -38,7 +38,7 @@ import kotlinx.cinterop.usePinned
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.darwin.Darwin
 import io.ktor.client.request.get
-import io.ktor.client.statement.body
+import io.ktor.client.call.body
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
