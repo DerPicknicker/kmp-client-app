@@ -164,19 +164,13 @@ class NowPlayingManager(
 
     private fun fetchArtwork(urlString: String, onResult: (MPMediaItemArtwork?) -> Unit) {
         val url = NSURL.URLWithString(urlString) ?: run { onResult(null); return }
-        val task = NSURLSession.sharedSession.dataTaskWithURL(url) { data: NSData?, _: NSURLResponse?, _: NSError? ->
-            if (data == null) {
-                onResult(null)
-                return@dataTaskWithURL
-            }
-            val image = UIImage(data = data)
-            val artwork = image?.let { img ->
-                // Use simple initializer; sufficient for lockscreen/control center
-                MPMediaItemArtwork(image = img)
-            }
+        // Fetch synchronously off the main thread to avoid blocking UI
+        launch(Dispatchers.Default) {
+            val data = NSData.dataWithContentsOfURL(url)
+            val image = data?.let { UIImage(data = it) }
+            val artwork = image?.let { img -> MPMediaItemArtwork(image = img) }
             onResult(artwork)
         }
-        task.resume()
     }
 }
 
