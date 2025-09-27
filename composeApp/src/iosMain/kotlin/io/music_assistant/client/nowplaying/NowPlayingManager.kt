@@ -50,15 +50,11 @@ class NowPlayingManager(
     private fun observePlayers() {
         launch {
             dataSource.playersData.collectLatest { list ->
-                // Choose a player to reflect in Now Playing: prefer playing, else first with an item
-                val withItems = list.filter { it.queue?.currentItem != null }
-                val active = withItems.firstOrNull { it.player.isPlaying } ?: withItems.firstOrNull()
+                // Prefer local builtin player; otherwise prefer any playing player; otherwise first
+                val builtin = list.firstOrNull { it.player.isBuiltin }
+                val active = builtin ?: list.firstOrNull { it.player.isPlaying } ?: list.firstOrNull()
                 currentPlayer = active
-                if (active == null) {
-                    clearNowPlaying()
-                } else {
-                    updateNowPlaying(active, multiplePlayers = withItems.size > 1)
-                }
+                active?.let { updateNowPlaying(it, multiplePlayers = list.size > 1) }
             }
         }
     }
@@ -115,20 +111,20 @@ class NowPlayingManager(
     private fun updateNowPlaying(playerData: PlayerData, multiplePlayers: Boolean) {
         val serverUrl = dataSource.apiClient.serverInfo.value?.baseUrl
         val track = playerData.queue?.currentItem?.track
-        val title = track?.name
-        val artist = track?.subtitle
-        val album = track?.album?.name
+        val title = track?.name ?: playerData.player.name
+        val artist = track?.subtitle ?: ""
+        val album = track?.album?.name ?: ""
         val durationMs = track?.duration?.toLong()?.let { it * 1000 }
-        val elapsedMs = playerData.queue?.elapsedTime?.toLong()?.let { it * 1000 }
+        val elapsedMs = playerData.queue?.elapsedTime?.toLong()?.let { it * 1000 } ?: 0L
         val playing = playerData.player.isPlaying
         val imageUrl = track?.imageInfo?.url(serverUrl)
 
         val info = mutableMapOf<Any?, Any?>()
         title?.let { info[MPMediaItemPropertyTitle] = it }
-        artist?.let { info[MPMediaItemPropertyArtist] = it }
-        album?.let { info[MPMediaItemPropertyAlbumTitle] = it }
+        if (artist.isNotEmpty()) info[MPMediaItemPropertyArtist] = artist
+        if (album.isNotEmpty()) info[MPMediaItemPropertyAlbumTitle] = album
         durationMs?.let { info[MPMediaItemPropertyPlaybackDuration] = it.toDouble() / 1000.0 }
-        elapsedMs?.let { info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = it.toDouble() / 1000.0 }
+        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedMs.toDouble() / 1000.0
         info[MPNowPlayingInfoPropertyPlaybackRate] = if (playing) 1.0 else 0.0
 
         // Apply base metadata immediately
