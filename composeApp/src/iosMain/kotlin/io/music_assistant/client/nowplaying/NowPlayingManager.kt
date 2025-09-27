@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
 package io.music_assistant.client.nowplaying
 
 import co.touchlab.kermit.Logger
@@ -31,13 +33,12 @@ import platform.MediaPlayer.MPRemoteCommandHandlerStatus
 import platform.MediaPlayer.MPRemoteCommandHandlerStatusCommandFailed
 import platform.MediaPlayer.MPRemoteCommandHandlerStatusSuccess
 import platform.UIKit.UIImage
-import kotlinx.cinterop.memScoped
-import kotlinx.cinterop.refTo
+import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.usePinned
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.darwin.Darwin
 import io.ktor.client.request.get
-import io.ktor.client.statement.bodyAsChannel
-import io.ktor.utils.io.core.toByteArray
+import io.ktor.client.statement.body
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
@@ -183,8 +184,7 @@ class NowPlayingManager(
         kotlinx.coroutines.GlobalScope.launch(Dispatchers.Default) {
             try {
                 val client = HttpClient(Darwin)
-                val channel = client.get(urlString).bodyAsChannel()
-                val bytes = channel.readRemaining().readBytes()
+                val bytes: ByteArray = client.get(urlString).body()
                 client.close()
                 val artwork = bytesToArtwork(bytes)
                 onResult(artwork)
@@ -196,7 +196,9 @@ class NowPlayingManager(
 
     private fun bytesToArtwork(bytes: ByteArray): MPMediaItemArtwork? {
         return try {
-            val data: NSData = memScoped { NSData.create(bytes = bytes.refTo(0), length = bytes.size.toULong()) }
+            val data: NSData = bytes.usePinned { pinned ->
+                NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
+            }
             val image = UIImage(data = data)
             image?.let { MPMediaItemArtwork(image = it) }
         } catch (_: Throwable) {
