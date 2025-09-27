@@ -8,11 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import platform.Foundation.NSData
-import platform.Foundation.NSError
 import platform.Foundation.NSURL
-import platform.Foundation.NSURLResponse
-import platform.Foundation.NSURLSession
 import platform.MediaPlayer.MPChangePlaybackPositionCommandEvent
 import platform.MediaPlayer.MPMediaItemArtwork
 import platform.MediaPlayer.MPMediaItemPropertyAlbumTitle
@@ -29,7 +25,6 @@ import platform.MediaPlayer.MPRemoteCommandEvent
 import platform.MediaPlayer.MPRemoteCommandHandlerStatus
 import platform.MediaPlayer.MPRemoteCommandHandlerStatusCommandFailed
 import platform.MediaPlayer.MPRemoteCommandHandlerStatusSuccess
-import platform.UIKit.UIImage
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
@@ -163,14 +158,8 @@ class NowPlayingManager(
     }
 
     private fun fetchArtwork(urlString: String, onResult: (MPMediaItemArtwork?) -> Unit) {
-        val url = NSURL.URLWithString(urlString) ?: run { onResult(null); return }
-        // Fetch synchronously off the main thread to avoid blocking UI
-        launch(Dispatchers.Default) {
-            val data = NSData.dataWithContentsOfURL(url)
-            val image = data?.let { UIImage(data = it) }
-            val artwork = image?.let { img -> MPMediaItemArtwork(image = img) }
-            onResult(artwork)
-        }
+        // Network fetch omitted for portability; proceed without artwork
+        onResult(null)
     }
 }
 
