@@ -197,7 +197,7 @@ class NowPlayingManager(
     private fun bytesToArtwork(bytes: ByteArray): MPMediaItemArtwork? {
         return try {
             val data: NSData = bytes.usePinned { pinned ->
-                NSData.dataWithBytes(bytes = pinned.addressOf(0), length = bytes.size.toULong())
+                NSData(bytes = pinned.addressOf(0), length = bytes.size.toULong())
             }
             val image = UIImage(data = data)
             image?.let { MPMediaItemArtwork(image = it) }
