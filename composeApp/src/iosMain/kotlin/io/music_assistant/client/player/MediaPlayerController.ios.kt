@@ -43,7 +43,10 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         this.listener = listener
         runOnMain {
             releaseInternal()
-            configureAudioSession()
+            // Use Swift helper to properly configure audio session
+            AudioSessionManager.configureAudioSession()
+            AudioSessionManager.prepareForPlayback()
+            
             val url = toNSURL(pathSource)
             val item = AVPlayerItem(uRL = url)
             playerItem = item
@@ -71,10 +74,10 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
     actual fun start() {
         runOnMain {
             log.i { "Starting playback, rate before: ${player?.rate}" }
-
-            // Note: AVAudioSession is automatically activated when starting playback
-            log.i { "Starting playback - AVAudioSession should be active" }
-
+            
+            // Ensure audio session is active and controls are enabled
+            AudioSessionManager.prepareForPlayback()
+            
             player?.play()
             log.i { "Playback started, rate after: ${player?.rate}" }
         }
@@ -97,8 +100,8 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
             player?.pause()
             player?.seekToTime(CMTimeMakeWithSeconds(0.0, 600))
             
-            // Deactivate audio session when stopping
-            deactivateAudioSession()
+            // Use Swift helper to deactivate audio session
+            AudioSessionManager.deactivateAudioSession()
             log.i { "Playback stopped - AVAudioSession deactivated" }
         }
     }
@@ -143,22 +146,11 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         player = null
         playerItem = null
         listener = null
-        deactivateAudioSession()
+        AudioSessionManager.deactivateAudioSession()
     }
 
-    private fun configureAudioSession() {
-        // TODO: Properly configure AVAudioSession when Kotlin/Native API is available
-        // For now, the audio session will be automatically configured by AVPlayer
-        // when playback starts. The background audio capability in Info.plist
-        // should be sufficient for Control Center integration.
-        log.i { "Audio session configuration delegated to AVPlayer" }
-    }
-    
-    private fun deactivateAudioSession() {
-        // TODO: Properly deactivate AVAudioSession when Kotlin/Native API is available
-        // For now, the audio session will be automatically managed by AVPlayer
-        log.i { "Audio session deactivation delegated to AVPlayer" }
-    }
+    // Audio session configuration is now handled by AudioSessionManager
+    // which calls the Swift AudioSessionHelper for proper AVAudioSession setup
 
 
     private fun runOnMain(block: () -> Unit) {
