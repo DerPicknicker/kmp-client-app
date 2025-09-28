@@ -183,22 +183,15 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
 
     private fun ensurePlayingKick() {
         playKickTimer?.invalidate()
-        // Try for 2 seconds to force playback to start in case of buffering stall
+        // Try for ~2 seconds to force playback to start in case of buffering stall
         var attempts = 0
         playKickTimer = NSTimer.scheduledTimerWithTimeInterval(0.2, repeats = true) { timer ->
             attempts += 1
-            val isPlaying = ((player?.rate ?: 0.0f) > 0.0f)
-            if (isPlaying) {
-                timer?.invalidate()
-                playKickTimer = null
-                return@scheduledTimerWithTimeInterval
-            }
+            player?.play()
             if (attempts >= 10) {
                 timer?.invalidate()
                 playKickTimer = null
-                return@scheduledTimerWithTimeInterval
             }
-            player?.play()
         }
     }
 
