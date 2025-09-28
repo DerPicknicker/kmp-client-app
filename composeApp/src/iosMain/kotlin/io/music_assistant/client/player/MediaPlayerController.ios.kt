@@ -58,7 +58,7 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
             playerItem = item
             player = AVPlayer(playerItem = item).apply {
                 // Allow network playback even on cellular
-                alllowsExternalPlayback = true
+                allowsExternalPlayback = true
             }
 
             // Notify completion when item finishes
@@ -154,7 +154,7 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
                 val err = alloc<ObjCObjectVar<NSError?>>()
                 session.setCategory(AVAudioSessionCategoryPlayback, error = err.ptr)
                 session.setMode(AVAudioSessionModeDefault, error = err.ptr)
-                session.setActive(true, error = err.ptr)
+                session.setActive(true, null)
                 err.value?.let { log.e(it.localizedDescription) }
             }
         } catch (e: Throwable) {
@@ -184,7 +184,7 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
             AVPlayerItemStatusFailed -> {
                 val error = playerItem?.error
                 log.e { "AVPlayerItem failed: ${error?.localizedDescription}" }
-                listener?.onError(error?.let { Exception(it.localizedDescription) })
+                listener?.onError(error?.let { e -> Exception(e.localizedDescription) })
             }
             else -> {
                 // Waiting for status

@@ -97,14 +97,14 @@ class NowPlayingManager(
         center.playCommand.enabled = true
         center.playCommand.setHandler {
             log.i { "Play" }
-            currentPlayer?.let { dataSource.playerAction(it, PlayerAction.Play) }
+            currentPlayer?.let { dataSource.playerAction(it, PlayerAction.Play()) }
             MPRemoteCommandHandlerStatusSuccess
         }
 
         center.pauseCommand.enabled = true
         center.pauseCommand.setHandler {
             log.i { "Pause" }
-            currentPlayer?.let { dataSource.playerAction(it, PlayerAction.Pause) }
+            currentPlayer?.let { dataSource.playerAction(it, PlayerAction.Pause()) }
             MPRemoteCommandHandlerStatusSuccess
         }
 

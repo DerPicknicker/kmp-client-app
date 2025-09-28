@@ -1,7 +1,9 @@
 package io.music_assistant.client.player
 
+import kotlinx.cinterop.COpaquePointer
 import platform.Foundation.NSObject
-import platform.darwin.NSObjectProtocol
+import platform.Foundation.addObserver
+import platform.Foundation.removeObserver
 
 // A simple KVO Subscription holder
 class KVObservation(
@@ -20,7 +22,7 @@ class Observer(val onEvent: (String) -> Unit) : NSObject() {
         keyPath: String?,
         ofObject: Any?,
         change: Map<*, *>?,
-        context: Unit?
+        context: COpaquePointer?
     ) {
         keyPath?.let(onEvent)
     }
