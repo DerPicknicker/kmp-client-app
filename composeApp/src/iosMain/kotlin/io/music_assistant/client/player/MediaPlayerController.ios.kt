@@ -33,11 +33,14 @@ import platform.MediaPlayer.MPNowPlayingInfoPropertyElapsedPlaybackTime
 import platform.MediaPlayer.MPNowPlayingInfoPropertyPlaybackRate
 import platform.MediaPlayer.MPNowPlayingPlaybackStatePaused
 import platform.MediaPlayer.MPNowPlayingPlaybackStatePlaying
+import platform.MediaPlayer.MPNowPlayingSession
+import platform.Foundation.NSArray
 
 actual class MediaPlayerController actual constructor(platformContext: PlatformContext) {
     private var player: AVPlayer? = null
     private var playerItem: AVPlayerItem? = null
     private var endObserver: Any? = null
+    private var nowPlayingSession: MPNowPlayingSession? = null
     private var listener: MediaPlayerListener? = null
     private val log = Logger.withTag("MediaPlayerController")
 
@@ -53,6 +56,17 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
             val item = AVPlayerItem(uRL = url)
             playerItem = item
             player = AVPlayer(playerItem = item)
+
+            // Register this AVPlayer with an MPNowPlayingSession so iOS
+            // considers it the active Now Playing participant
+            try {
+                val avp = player
+                if (avp != null) {
+                    nowPlayingSession = MPNowPlayingSession(players = listOf(avp))
+                    nowPlayingSession?.becomeActiveIfPossible()
+                    log.i { "MPNowPlayingSession created and activated" }
+                }
+            } catch (_: Throwable) { }
 
             // Notify completion when item finishes
             endObserver = NSNotificationCenter.defaultCenter.addObserverForName(
