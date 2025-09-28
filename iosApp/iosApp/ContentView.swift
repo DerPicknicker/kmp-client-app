@@ -8,7 +8,7 @@ struct ComposeView: UIViewControllerRepresentable {
         // Configure audio session before creating the main view controller
         AudioSessionHelper.shared.configureAudioSession()
         AudioSessionHelper.shared.setInitialNowPlayingInfo()
-        AudioSessionHelper.shared.enableRemoteControls()
+        AudioSessionHelper.shared.prepareForPlayback()
         
         return MainViewControllerKt.MainViewController()
     }

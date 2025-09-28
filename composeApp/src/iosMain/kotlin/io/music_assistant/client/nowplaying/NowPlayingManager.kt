@@ -134,64 +134,67 @@ class NowPlayingManager(
     }
     
     private fun configureRemoteCommandCenter() {
-        val center = MPRemoteCommandCenter.sharedCommandCenter()
-        log.i { "Configuring remote command center" }
+        // All interactions with MPRemoteCommandCenter must happen on the main thread
+        dispatch_async(dispatch_get_main_queue()) {
+            val center = MPRemoteCommandCenter.sharedCommandCenter()
+            log.i { "Configuring remote command center" }
 
-        fun MPRemoteCommand.setHandler(handler: (MPRemoteCommandEvent?) -> MPRemoteCommandHandlerStatus) {
-            addTargetWithHandler { event -> handler(event) }
-        }
+            fun MPRemoteCommand.setHandler(handler: (MPRemoteCommandEvent?) -> MPRemoteCommandHandlerStatus) {
+                addTargetWithHandler { event -> handler(event) }
+            }
 
-        // Enable commands - they will be re-enabled when we have an active player
-        center.togglePlayPauseCommand.enabled = true
-        center.togglePlayPauseCommand.setHandler {
-            log.i { "Toggle play/pause from Control Center" }
-            currentPlayer?.let { dataSource.playerAction(it, PlayerAction.TogglePlayPause) }
-                ?: log.w { "No current player available for toggle play/pause" }
-            MPRemoteCommandHandlerStatusSuccess
-        }
-
-        center.playCommand.enabled = true
-        center.playCommand.setHandler {
-            log.i { "Play from Control Center" }
-            currentPlayer?.let { dataSource.playerAction(it, PlayerAction.TogglePlayPause) }
-                ?: log.w { "No current player available for play" }
-            MPRemoteCommandHandlerStatusSuccess
-        }
-
-        center.pauseCommand.enabled = true
-        center.pauseCommand.setHandler {
-            log.i { "Pause from Control Center" }
-            currentPlayer?.let { dataSource.playerAction(it, PlayerAction.TogglePlayPause) }
-                ?: log.w { "No current player available for pause" }
-            MPRemoteCommandHandlerStatusSuccess
-        }
-
-        center.nextTrackCommand.enabled = true
-        center.nextTrackCommand.setHandler {
-            log.i { "Next track from Control Center" }
-            currentPlayer?.let { dataSource.playerAction(it, PlayerAction.Next) }
-                ?: log.w { "No current player available for next track" }
-            MPRemoteCommandHandlerStatusSuccess
-        }
-
-        center.previousTrackCommand.enabled = true
-        center.previousTrackCommand.setHandler {
-            log.i { "Previous track from Control Center" }
-            currentPlayer?.let { dataSource.playerAction(it, PlayerAction.Previous) }
-                ?: log.w { "No current player available for previous track" }
-            MPRemoteCommandHandlerStatusSuccess
-        }
-
-        center.changePlaybackPositionCommand?.let { command ->
-            command.enabled = true
-            command.addTargetWithHandler { event ->
-                val evt = event as? MPChangePlaybackPositionCommandEvent
-                val seconds = evt?.positionTime ?: return@addTargetWithHandler MPRemoteCommandHandlerStatusCommandFailed
-                val sec = seconds.toLong()
-                log.i { "Seek to $sec s from Control Center" }
-                currentPlayer?.let { dataSource.playerAction(it, PlayerAction.SeekTo(sec)) }
-                    ?: log.w { "No current player available for seek" }
+            // Enable commands - they will be re-enabled when we have an active player
+            center.togglePlayPauseCommand.enabled = true
+            center.togglePlayPauseCommand.setHandler {
+                log.i { "Toggle play/pause from Control Center" }
+                currentPlayer?.let { dataSource.playerAction(it, PlayerAction.TogglePlayPause) }
+                    ?: log.w { "No current player available for toggle play/pause" }
                 MPRemoteCommandHandlerStatusSuccess
+            }
+
+            center.playCommand.enabled = true
+            center.playCommand.setHandler {
+                log.i { "Play from Control Center" }
+                currentPlayer?.let { dataSource.playerAction(it, PlayerAction.TogglePlayPause) }
+                    ?: log.w { "No current player available for play" }
+                MPRemoteCommandHandlerStatusSuccess
+            }
+
+            center.pauseCommand.enabled = true
+            center.pauseCommand.setHandler {
+                log.i { "Pause from Control Center" }
+                currentPlayer?.let { dataSource.playerAction(it, PlayerAction.TogglePlayPause) }
+                    ?: log.w { "No current player available for pause" }
+                MPRemoteCommandHandlerStatusSuccess
+            }
+
+            center.nextTrackCommand.enabled = true
+            center.nextTrackCommand.setHandler {
+                log.i { "Next track from Control Center" }
+                currentPlayer?.let { dataSource.playerAction(it, PlayerAction.Next) }
+                    ?: log.w { "No current player available for next track" }
+                MPRemoteCommandHandlerStatusSuccess
+            }
+
+            center.previousTrackCommand.enabled = true
+            center.previousTrackCommand.setHandler {
+                log.i { "Previous track from Control Center" }
+                currentPlayer?.let { dataSource.playerAction(it, PlayerAction.Previous) }
+                    ?: log.w { "No current player available for previous track" }
+                MPRemoteCommandHandlerStatusSuccess
+            }
+
+            center.changePlaybackPositionCommand?.let { command ->
+                command.enabled = true
+                command.addTargetWithHandler { event ->
+                    val evt = event as? MPChangePlaybackPositionCommandEvent
+                    val seconds = evt?.positionTime ?: return@addTargetWithHandler MPRemoteCommandHandlerStatusCommandFailed
+                    val sec = seconds.toLong()
+                    log.i { "Seek to $sec s from Control Center" }
+                    currentPlayer?.let { dataSource.playerAction(it, PlayerAction.SeekTo(sec)) }
+                        ?: log.w { "No current player available for seek" }
+                    MPRemoteCommandHandlerStatusSuccess
+                }
             }
         }
     }

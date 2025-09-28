@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import MediaPlayer
+import UIKit
 
 @objc public class AudioSessionHelper: NSObject {
     
@@ -70,19 +71,21 @@ import MediaPlayer
     
     /// Ensure Control Center controls are enabled
     @objc public func enableRemoteControls() {
-        let commandCenter = MPRemoteCommandCenter.shared()
-        
-        // Enable all playback controls
-        commandCenter.playCommand.isEnabled = true
-        commandCenter.pauseCommand.isEnabled = true
-        commandCenter.togglePlayPauseCommand.isEnabled = true
-        commandCenter.nextTrackCommand.isEnabled = true
-        commandCenter.previousTrackCommand.isEnabled = true
-        commandCenter.changePlaybackPositionCommand.isEnabled = true
-        commandCenter.skipForwardCommand.isEnabled = false
-        commandCenter.skipBackwardCommand.isEnabled = false
-        
-        print("[AudioSessionHelper] Remote controls enabled")
+        DispatchQueue.main.async {
+            let commandCenter = MPRemoteCommandCenter.shared()
+            
+            // Enable all playback controls
+            commandCenter.playCommand.isEnabled = true
+            commandCenter.pauseCommand.isEnabled = true
+            commandCenter.togglePlayPauseCommand.isEnabled = true
+            commandCenter.nextTrackCommand.isEnabled = true
+            commandCenter.previousTrackCommand.isEnabled = true
+            commandCenter.changePlaybackPositionCommand.isEnabled = true
+            commandCenter.skipForwardCommand.isEnabled = false
+            commandCenter.skipBackwardCommand.isEnabled = false
+            
+            print("[AudioSessionHelper] Remote controls enabled")
+        }
     }
     
     /// Set initial Now Playing info to register with Control Center
@@ -110,13 +113,15 @@ import MediaPlayer
                 try audioSession.setActive(true)
             }
             
-            // Enable remote controls
-            enableRemoteControls()
-            
-            // Begin receiving remote control events
-            UIApplication.shared.beginReceivingRemoteControlEvents()
-            
-            print("[AudioSessionHelper] Prepared for playback")
+            DispatchQueue.main.async {
+                // Enable remote controls
+                self.enableRemoteControls()
+                
+                // Begin receiving remote control events
+                UIApplication.shared.beginReceivingRemoteControlEvents()
+                
+                print("[AudioSessionHelper] Prepared for playback")
+            }
         } catch {
             print("[AudioSessionHelper] Failed to prepare for playback: \(error.localizedDescription)")
         }
