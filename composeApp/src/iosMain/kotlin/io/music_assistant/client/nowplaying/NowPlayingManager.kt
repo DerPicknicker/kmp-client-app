@@ -160,47 +160,59 @@ class NowPlayingManager(
         if (artist.isNotEmpty()) info[MPMediaItemPropertyArtist] = artist
         if (album.isNotEmpty()) info[MPMediaItemPropertyAlbumTitle] = album
 
-        // Ensure duration is positive before setting it
-        durationMs?.takeIf { it > 0 }?.let { info[MPMediaItemPropertyPlaybackDuration] = it.toDouble() / 1000.0 }
+        // Ensure duration is positive before setting it, with fallback
+        val finalDuration = durationMs?.takeIf { it > 0 } ?: 180000L // Default 3 minutes if duration is invalid
+        info[MPMediaItemPropertyPlaybackDuration] = finalDuration.toDouble() / 1000.0
+
         if (durationMs != null && durationMs <= 0) {
-            log.w { "Invalid duration: $durationMs ms, skipping duration setting" }
+            log.w { "Invalid duration: $durationMs ms, using fallback: $finalDuration ms" }
         }
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedMs.toDouble() / 1000.0
         info[MPNowPlayingInfoPropertyPlaybackRate] = if (playing) 1.0 else 0.0
         info[MPNowPlayingInfoPropertyIsLiveStream] = false
         info[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaTypeAudio
 
+        // Add playback progress for better Control Center support
+        if (finalDuration > 0) {
+            val progress = elapsedMs.toDouble() / finalDuration.toDouble()
+            info["playbackProgress"] = progress.coerceIn(0.0, 1.0)
+        }
+
         // Additional properties that might help with Control Center display
-        if (durationMs != null && durationMs > 0) {
-            info["playbackDuration"] = durationMs.toDouble() / 1000.0
-        }
-        if (elapsedMs >= 0) {
-            info["playbackElapsedTime"] = elapsedMs.toDouble() / 1000.0
-        }
+        info["playbackDuration"] = finalDuration.toDouble() / 1000.0
+        info["playbackElapsedTime"] = elapsedMs.toDouble() / 1000.0
 
         // Ensure we have a valid playback queue identifier for better Control Center support
         info["playbackQueueIndex"] = 0L
         info["playbackQueueCount"] = 1L
 
-        // Apply base metadata immediately
-        log.i { "Update Now Playing: title=$title, artist=$artist, album=$album, playing=$playing" }
-        setNowPlayingInfo(info)
+        // Additional properties that iOS Control Center might need
+        info["title"] = title ?: "Unknown Track"
+        info["artist"] = artist.takeIf { it.isNotEmpty() } ?: "Unknown Artist"
+        info["albumTitle"] = album.takeIf { it.isNotEmpty() } ?: ""
+        info["playbackRate"] = if (playing) 1.0 else 0.0
 
-        // Explicitly set playback state after setting Now Playing info
+        // Set playback state first to ensure iOS recognizes this as active playback
         dispatch_async(dispatch_get_main_queue()) {
             MPNowPlayingInfoCenter.defaultCenter().playbackState = if (playing) MPNowPlayingPlaybackStatePlaying else MPNowPlayingPlaybackStatePaused
             log.i { "Set playback state to: ${if (playing) "Playing" else "Paused"}" }
         }
 
+        // Apply base metadata immediately
+        log.i { "Update Now Playing: title=$title, artist=$artist, album=$album, playing=$playing" }
+        setNowPlayingInfo(info)
+
         // Re-enable remote commands when updating Now Playing info
-        val center = MPRemoteCommandCenter.sharedCommandCenter()
-        log.i { "Re-enabling remote commands for active player" }
-        center.togglePlayPauseCommand.enabled = true
-        center.playCommand.enabled = true
-        center.pauseCommand.enabled = true
-        center.nextTrackCommand.enabled = true
-        center.previousTrackCommand.enabled = true
-        center.changePlaybackPositionCommand?.enabled = true
+        dispatch_async(dispatch_get_main_queue()) {
+            val center = MPRemoteCommandCenter.sharedCommandCenter()
+            log.i { "Re-enabling remote commands for active player on main thread" }
+            center.togglePlayPauseCommand.enabled = true
+            center.playCommand.enabled = true
+            center.pauseCommand.enabled = true
+            center.nextTrackCommand.enabled = true
+            center.previousTrackCommand.enabled = true
+            center.changePlaybackPositionCommand?.enabled = true
+        }
 
         // Load artwork asynchronously if available; reuse cached artwork to avoid flicker
         if (!imageUrl.isNullOrBlank()) {
