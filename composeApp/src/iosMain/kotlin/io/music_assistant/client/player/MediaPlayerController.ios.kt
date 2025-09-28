@@ -63,6 +63,9 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
             ) { _ ->
                 log.i { "Audio completed" }
                 this.listener?.onAudioCompleted()
+
+                // Note: AVAudioSession deactivation happens automatically when playback ends
+                log.i { "Playback completed - AVAudioSession should deactivate automatically" }
             }
 
 
@@ -74,6 +77,10 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
     actual fun start() {
         runOnMain {
             log.i { "Starting playback, rate before: ${player?.rate}" }
+
+            // Note: AVAudioSession is automatically activated when starting playback
+            log.i { "Starting playback - AVAudioSession should be active" }
+
             player?.play()
             log.i { "Playback started, rate after: ${player?.rate}" }
         }
@@ -84,6 +91,10 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
             log.i { "Pausing playback, rate before: ${player?.rate}" }
             player?.pause()
             log.i { "Playback paused, rate after: ${player?.rate}" }
+
+            // Note: AVAudioSession deactivation is handled by the OS when playback stops
+            // The key is to update MPNowPlayingInfoCenter with correct playback rate
+            log.i { "Playback paused - Control Center should update via MPNowPlayingInfoCenter" }
         }
     }
 
@@ -91,6 +102,9 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         runOnMain {
             player?.pause()
             player?.seekToTime(CMTimeMakeWithSeconds(0.0, 600))
+
+            // Note: AVAudioSession deactivation happens automatically when playback stops
+            log.i { "Playback stopped - AVAudioSession should deactivate automatically" }
         }
     }
 
