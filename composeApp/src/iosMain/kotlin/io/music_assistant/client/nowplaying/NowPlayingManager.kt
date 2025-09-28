@@ -44,7 +44,6 @@ import io.ktor.client.request.get
 import io.ktor.client.call.body
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
-import io.music_assistant.client.player.AudioSessionManager
 
 /**
  * iOS Now Playing and Remote Command Center integration.
@@ -100,10 +99,8 @@ class NowPlayingManager(
     }
 
     private fun configureAudioSession() {
-        // Use Swift helper to properly configure audio session
-        AudioSessionManager.configureAudioSession()
-        AudioSessionManager.enableRemoteControls()
-        log.i { "Audio session configured via Swift helper for Control Center integration" }
+        // Audio session is configured by Swift code in ContentView
+        log.i { "Audio session configuration handled by Swift layer" }
         
         // Set up the app as "now playing" even before audio starts
         dispatch_async(dispatch_get_main_queue()) {

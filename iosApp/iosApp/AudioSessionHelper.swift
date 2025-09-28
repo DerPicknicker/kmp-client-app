@@ -5,13 +5,21 @@ import MediaPlayer
 @objc public class AudioSessionHelper: NSObject {
     
     @objc public static let shared = AudioSessionHelper()
+    private var isConfigured = false
     
     private override init() {
         super.init()
+        // Configure audio session immediately on init
+        configureAudioSession()
     }
     
     /// Configure the audio session for background playback and Control Center integration
     @objc public func configureAudioSession() {
+        guard !isConfigured else {
+            print("[AudioSessionHelper] Audio session already configured")
+            return
+        }
+        
         do {
             let audioSession = AVAudioSession.sharedInstance()
             
@@ -26,6 +34,7 @@ import MediaPlayer
             try audioSession.setActive(true)
             
             print("[AudioSessionHelper] Audio session configured successfully for playback")
+            isConfigured = true
             
             // Set up interruption handling
             NotificationCenter.default.addObserver(

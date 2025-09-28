@@ -43,10 +43,7 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         this.listener = listener
         runOnMain {
             releaseInternal()
-            // Use Swift helper to properly configure audio session
-            AudioSessionManager.configureAudioSession()
-            AudioSessionManager.prepareForPlayback()
-            
+            // Audio session is configured by Swift code in ContentView
             val url = toNSURL(pathSource)
             val item = AVPlayerItem(uRL = url)
             playerItem = item
@@ -75,9 +72,6 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         runOnMain {
             log.i { "Starting playback, rate before: ${player?.rate}" }
             
-            // Ensure audio session is active and controls are enabled
-            AudioSessionManager.prepareForPlayback()
-            
             player?.play()
             log.i { "Playback started, rate after: ${player?.rate}" }
         }
@@ -100,9 +94,7 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
             player?.pause()
             player?.seekToTime(CMTimeMakeWithSeconds(0.0, 600))
             
-            // Use Swift helper to deactivate audio session
-            AudioSessionManager.deactivateAudioSession()
-            log.i { "Playback stopped - AVAudioSession deactivated" }
+            log.i { "Playback stopped" }
         }
     }
 
@@ -146,7 +138,7 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         player = null
         playerItem = null
         listener = null
-        AudioSessionManager.deactivateAudioSession()
+        // Audio session cleanup handled by Swift code
     }
 
     // Audio session configuration is now handled by AudioSessionManager
