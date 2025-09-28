@@ -63,8 +63,8 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
                 val avp = player
                 if (avp != null) {
                     nowPlayingSession = MPNowPlayingSession(players = listOf(avp))
-                    nowPlayingSession?.becomeActiveIfPossible()
-                    log.i { "MPNowPlayingSession created and activated" }
+                    // Activation happens automatically when possible on iOS; no explicit call needed
+                    log.i { "MPNowPlayingSession created" }
                 }
             } catch (_: Throwable) { }
 
