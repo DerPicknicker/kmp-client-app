@@ -66,6 +66,8 @@ class NowPlayingManager(
         configureAudioSession()
         // Start observing player state and configure command center
         configureRemoteCommandCenter()
+        // Set up initial Now Playing info to activate Control Center
+        setupInitialNowPlayingInfo()
         observePlayers()
     }
 
@@ -100,6 +102,36 @@ class NowPlayingManager(
         // Ensure audio session is properly configured for Control Center
         // This is critical for playback controls to appear
         log.i { "Configuring audio session for Control Center integration" }
+        
+        // Set up the app as "now playing" even before audio starts
+        dispatch_async(dispatch_get_main_queue()) {
+            val infoCenter = MPNowPlayingInfoCenter.defaultCenter()
+            // Initialize with minimal info to activate Control Center
+            infoCenter.playbackState = MPNowPlayingPlaybackStatePaused
+            infoCenter.nowPlayingInfo = mapOf(
+                MPMediaItemPropertyTitle to "Music Assistant",
+                MPMediaItemPropertyArtist to "Ready to play",
+                MPMediaItemPropertyPlaybackDuration to 0.0,
+                MPNowPlayingInfoPropertyElapsedPlaybackTime to 0.0,
+                MPNowPlayingInfoPropertyPlaybackRate to 0.0
+            )
+            log.i { "Initial Now Playing info set to activate Control Center" }
+        }
+    }
+    
+    private fun setupInitialNowPlayingInfo() {
+        // Set up initial state to ensure Control Center recognizes the app
+        dispatch_async(dispatch_get_main_queue()) {
+            val center = MPRemoteCommandCenter.sharedCommandCenter()
+            // Enable all commands initially
+            center.playCommand.enabled = true
+            center.pauseCommand.enabled = true
+            center.togglePlayPauseCommand.enabled = true
+            center.nextTrackCommand.enabled = true
+            center.previousTrackCommand.enabled = true
+            center.changePlaybackPositionCommand?.enabled = true
+            log.i { "Initial remote commands enabled" }
+        }
     }
     
     private fun configureRemoteCommandCenter() {
