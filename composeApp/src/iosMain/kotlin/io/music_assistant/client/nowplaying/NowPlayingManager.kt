@@ -208,7 +208,8 @@ class NowPlayingManager(
         val durationMs = track?.duration?.toLong()?.takeIf { it > 0 }?.let { it * 1000 }
         // Additional validation: ensure duration is never negative
         val safeDurationMs = durationMs?.coerceAtLeast(1L) ?: 180000L
-        val elapsedMs = playerData.queue?.elapsedTime?.toLong()?.let { it * 1000 } ?: 0L
+        val elapsedMs = playerData.queue?.elapsedTime?.toLong()?.let { it * 1000 }
+            ?.coerceAtLeast(0L) ?: 0L
         val playing = playerData.player.isPlaying
         val imageUrl = track?.imageInfo?.url(serverUrl)
 
@@ -237,9 +238,7 @@ class NowPlayingManager(
             info["playbackProgress"] = progress.coerceIn(0.0, 1.0)
         }
 
-        // Additional properties that might help with Control Center display
-        info["playbackDuration"] = safeDurationMs.toDouble() / 1000.0
-        info["playbackElapsedTime"] = elapsedMs.toDouble() / 1000.0
+        // Remove nonstandard keys that can confuse the system
 
         // Ensure we have a valid playback queue identifier for better Control Center support
         info["playbackQueueIndex"] = 0L

@@ -26,18 +26,20 @@ import UIKit
             
             // Configure as long-form local playback (music/podcasts), not live stream
             if #available(iOS 13.0, *) {
+                // With longFormAudio, most route options (AirPlay/A2DP) are not supported.
+                // Use no options to avoid OSStatus -50.
                 try audioSession.setCategory(
                     .playback,
                     mode: .default,
                     policy: .longFormAudio,
-                    options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP]
+                    options: []
                 )
             } else {
-                // Fallback for older iOS (should not be used on supported targets)
+                // Fallback for older iOS
                 try audioSession.setCategory(
                     .playback,
                     mode: .default,
-                    options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP]
+                    options: []
                 )
             }
             
