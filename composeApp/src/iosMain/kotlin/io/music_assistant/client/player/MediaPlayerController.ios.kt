@@ -9,8 +9,12 @@ import platform.AVFAudio.AVAudioSessionModeDefault
 import platform.AVFoundation.AVPlayer
 import platform.AVFoundation.AVPlayerItem
 import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
+import platform.AVFoundation.AVPlayerItemPlaybackStalledNotification
 import platform.AVFoundation.AVPlayerItemStatusFailed
 import platform.AVFoundation.AVPlayerItemStatusReadyToPlay
+import platform.AVFoundation.AVPlayerTimeControlStatusPaused
+import platform.AVFoundation.AVPlayerTimeControlStatusPlaying
+import platform.AVFoundation.AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate
 import platform.AVFoundation.play
 import platform.AVFoundation.pause
 import platform.AVFoundation.currentTime
@@ -33,9 +37,11 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
     private var player: AVPlayer? = null
     private var playerItem: AVPlayerItem? = null
     private var endObserver: Any? = null
+    private var stallObserver: Any? = null
     private var listener: MediaPlayerListener? = null
     private var isPlayingInternal: Boolean = false
     private var readyTimer: NSTimer? = null
+    private var playKickTimer: NSTimer? = null
 
     actual fun prepare(
         pathSource: String,
@@ -60,6 +66,15 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
                 this.listener?.onAudioCompleted()
             }
 
+            // Try to recover from stalls by nudging playback
+            stallObserver = NSNotificationCenter.defaultCenter.addObserverForName(
+                name = AVPlayerItemPlaybackStalledNotification,
+                `object` = item,
+                queue = null
+            ) { _ ->
+                player?.play()
+            }
+
             // Signal ready only once the item is actually ready
             observeItemReadiness(item)
         }
@@ -69,6 +84,7 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         runOnMain {
             player?.play()
             isPlayingInternal = true
+            ensurePlayingKick()
         }
     }
 
@@ -118,8 +134,12 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
     private fun releaseInternal() {
         readyTimer?.invalidate()
         readyTimer = null
+        playKickTimer?.invalidate()
+        playKickTimer = null
         endObserver?.let { NSNotificationCenter.defaultCenter.removeObserver(it) }
         endObserver = null
+        stallObserver?.let { NSNotificationCenter.defaultCenter.removeObserver(it) }
+        stallObserver = null
         player?.pause()
         player = null
         playerItem = null
@@ -160,6 +180,29 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
                 else -> {
                     // keep waiting
                 }
+            }
+        }
+    }
+
+    private fun ensurePlayingKick() {
+        playKickTimer?.invalidate()
+        // Try for 2 seconds to force playback to start in case of buffering stall
+        var attempts = 0
+        playKickTimer = NSTimer.scheduledTimerWithTimeInterval(0.2, repeats = true) { timer ->
+            attempts += 1
+            val status = player?.timeControlStatus
+            if (status == AVPlayerTimeControlStatusPlaying) {
+                timer?.invalidate()
+                playKickTimer = null
+                return@scheduledTimerWithTimeInterval
+            }
+            if (attempts >= 10) {
+                timer?.invalidate()
+                playKickTimer = null
+                return@scheduledTimerWithTimeInterval
+            }
+            if (status == AVPlayerTimeControlStatusPaused || status == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate) {
+                player?.play()
             }
         }
     }
