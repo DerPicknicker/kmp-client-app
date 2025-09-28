@@ -25,6 +25,8 @@ import platform.MediaPlayer.MPNowPlayingInfoCenter
 import platform.MediaPlayer.MPNowPlayingInfoPropertyElapsedPlaybackTime
 import platform.MediaPlayer.MPNowPlayingInfoPropertyPlaybackRate
 import platform.MediaPlayer.MPNowPlayingInfoPropertyIsLiveStream
+import platform.MediaPlayer.MPNowPlayingInfoPropertyMediaType
+import platform.MediaPlayer.MPNowPlayingInfoMediaTypeAudio
 import platform.MediaPlayer.MPNowPlayingPlaybackStatePaused
 import platform.MediaPlayer.MPNowPlayingPlaybackStatePlaying
 import platform.MediaPlayer.MPRemoteCommand
@@ -152,6 +154,7 @@ class NowPlayingManager(
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedMs.toDouble() / 1000.0
         info[MPNowPlayingInfoPropertyPlaybackRate] = if (playing) 1.0 else 0.0
         info[MPNowPlayingInfoPropertyIsLiveStream] = false
+        info[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaTypeAudio
 
         // Apply base metadata immediately
         log.i { "Update Now Playing: title=$title, artist=$artist, album=$album, playing=$playing" }

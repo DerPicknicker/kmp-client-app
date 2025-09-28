@@ -12,9 +12,6 @@ import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
 import platform.AVFoundation.AVPlayerItemPlaybackStalledNotification
 import platform.AVFoundation.AVPlayerItemStatusFailed
 import platform.AVFoundation.AVPlayerItemStatusReadyToPlay
-import platform.AVFoundation.AVPlayerTimeControlStatusPaused
-import platform.AVFoundation.AVPlayerTimeControlStatusPlaying
-import platform.AVFoundation.AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate
 import platform.AVFoundation.play
 import platform.AVFoundation.pause
 import platform.AVFoundation.currentTime
@@ -190,8 +187,8 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         var attempts = 0
         playKickTimer = NSTimer.scheduledTimerWithTimeInterval(0.2, repeats = true) { timer ->
             attempts += 1
-            val status = player?.timeControlStatus
-            if (status == AVPlayerTimeControlStatusPlaying) {
+            val isPlaying = ((player?.rate ?: 0.0f) > 0.0f)
+            if (isPlaying) {
                 timer?.invalidate()
                 playKickTimer = null
                 return@scheduledTimerWithTimeInterval
@@ -201,9 +198,7 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
                 playKickTimer = null
                 return@scheduledTimerWithTimeInterval
             }
-            if (status == AVPlayerTimeControlStatusPaused || status == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate) {
-                player?.play()
-            }
+            player?.play()
         }
     }
 
