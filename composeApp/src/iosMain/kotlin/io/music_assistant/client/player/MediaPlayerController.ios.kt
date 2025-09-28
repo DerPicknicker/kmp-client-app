@@ -12,8 +12,13 @@ import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
 import platform.AVFoundation.AVPlayerItemPlaybackStalledNotification
 import platform.AVFoundation.AVPlayerItemStatusFailed
 import platform.AVFoundation.AVPlayerItemStatusReadyToPlay
+import platform.AVFoundation.AVPlayerTimeControlStatusPlaying
+import platform.AVFoundation.AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate
 import platform.AVFoundation.play
 import platform.AVFoundation.pause
+import platform.AVFoundation.rate
+import platform.AVFoundation.timeControlStatus
+import platform.AVFoundation.reasonForWaitingToPlay
 import platform.AVFoundation.currentTime
 import platform.AVFoundation.seekToTime
 import platform.AVFoundation.duration
@@ -29,6 +34,7 @@ import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
+import co.touchlab.kermit.Logger
 
 actual class MediaPlayerController actual constructor(platformContext: PlatformContext) {
     private var player: AVPlayer? = null
@@ -36,9 +42,8 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
     private var endObserver: Any? = null
     private var stallObserver: Any? = null
     private var listener: MediaPlayerListener? = null
-    private var isPlayingInternal: Boolean = false
-    private var readyTimer: NSTimer? = null
-    private var playKickTimer: NSTimer? = null
+    private val log = Logger.withTag("MediaPlayerController")
+    private var observations = mutableListOf<KVObservation>()
 
     actual fun prepare(
         pathSource: String,
@@ -51,7 +56,10 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
             val url = toNSURL(pathSource)
             val item = AVPlayerItem(uRL = url)
             playerItem = item
-            player = AVPlayer(playerItem = item)
+            player = AVPlayer(playerItem = item).apply {
+                // Allow network playback even on cellular
+                alllowsExternalPlayback = true
+            }
 
             // Notify completion when item finishes
             endObserver = NSNotificationCenter.defaultCenter.addObserverForName(
@@ -59,7 +67,6 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
                 `object` = item,
                 queue = null
             ) { _ ->
-                isPlayingInternal = false
                 this.listener?.onAudioCompleted()
             }
 
@@ -69,26 +76,26 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
                 `object` = item,
                 queue = null
             ) { _ ->
+                log.w { "Playback stalled; trying to resume" }
                 player?.play()
             }
 
-            // Signal ready only once the item is actually ready
-            observeItemReadiness(item)
+            // KVO observations
+            observations.add(item.observe("status") { handlePlayerStateChange() })
+            observations.add(player!!.observe("timeControlStatus") { handlePlayerStateChange() })
+            observations.add(player!!.observe("rate") { handlePlayerStateChange() })
         }
     }
 
     actual fun start() {
         runOnMain {
             player?.play()
-            isPlayingInternal = true
-            ensurePlayingKick()
         }
     }
 
     actual fun pause() {
         runOnMain {
             player?.pause()
-            isPlayingInternal = false
         }
     }
 
@@ -96,7 +103,6 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         runOnMain {
             player?.pause()
             player?.seekToTime(CMTimeMakeWithSeconds(0.0, 600))
-            isPlayingInternal = false
         }
     }
 
@@ -116,11 +122,11 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
 
     actual fun seekTo(seconds: Long) {
         runOnMain {
-            player?.seekToTime(CMTimeMakeWithSeconds(seconds.toDouble(), 600))
+            player?.seekToTime(CMTimeMakeWithSeconds(seconds.toDouble() / 1000.0, 600))
         }
     }
 
-    actual fun isPlaying(): Boolean = isPlayingInternal
+    actual fun isPlaying(): Boolean = player?.rate ?: 0.0f > 0.0f
 
     actual fun release() {
         runOnMain {
@@ -129,10 +135,8 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
     }
 
     private fun releaseInternal() {
-        readyTimer?.invalidate()
-        readyTimer = null
-        playKickTimer?.invalidate()
-        playKickTimer = null
+        observations.forEach { it.invalidate() }
+        observations.clear()
         endObserver?.let { NSNotificationCenter.defaultCenter.removeObserver(it) }
         endObserver = null
         stallObserver?.let { NSNotificationCenter.defaultCenter.removeObserver(it) }
@@ -140,7 +144,6 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         player?.pause()
         player = null
         playerItem = null
-        isPlayingInternal = false
         listener = null
     }
 
@@ -149,48 +152,42 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
             val session = AVAudioSession.sharedInstance()
             memScoped {
                 val err = alloc<ObjCObjectVar<NSError?>>()
-                // Category and mode
                 session.setCategory(AVAudioSessionCategoryPlayback, error = err.ptr)
                 session.setMode(AVAudioSessionModeDefault, error = err.ptr)
-                // Some Kotlin/Native iOS SDKs don't expose setActive; rely on category/mode
+                session.setActive(true, error = err.ptr)
+                err.value?.let { log.e(it.localizedDescription) }
             }
-        } catch (_: Throwable) {
-            // Best-effort; ignore failures on simulator
+        } catch (e: Throwable) {
+            log.e("Failed to configure audio session", e)
         }
     }
 
-    private fun observeItemReadiness(item: AVPlayerItem) {
-        readyTimer?.invalidate()
-        readyTimer = NSTimer.scheduledTimerWithTimeInterval(0.1, repeats = true) { timer ->
-            when (item.status) {
-                AVPlayerItemStatusReadyToPlay -> {
-                    timer?.invalidate()
-                    readyTimer = null
-                    this.listener?.onReady()
-                }
-                AVPlayerItemStatusFailed -> {
-                    timer?.invalidate()
-                    readyTimer = null
-                    val err = item.error
-                    this.listener?.onError(if (err != null) Exception(err.localizedDescription ?: "AVPlayerItem failed") else null)
-                }
-                else -> {
-                    // keep waiting
+    private fun handlePlayerStateChange() {
+        val itemStatus = playerItem?.status ?: return
+        val playerStatus = player?.timeControlStatus ?: return
+
+        when (itemStatus) {
+            AVPlayerItemStatusReadyToPlay -> {
+                log.i { "Player ready to play" }
+                listener?.onReady()
+
+                // Log detailed status when ready
+                when (playerStatus) {
+                    AVPlayerTimeControlStatusPlaying -> log.i { "Status: Playing" }
+                    AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate -> {
+                        val reason = player?.reasonForWaitingToPlay
+                        log.i { "Status: Waiting to play ($reason)" }
+                    }
+                    else -> log.i { "Status: Paused/Other" }
                 }
             }
-        }
-    }
-
-    private fun ensurePlayingKick() {
-        playKickTimer?.invalidate()
-        // Try for ~2 seconds to force playback to start in case of buffering stall
-        var attempts = 0
-        playKickTimer = NSTimer.scheduledTimerWithTimeInterval(0.2, repeats = true) { timer ->
-            attempts += 1
-            player?.play()
-            if (attempts >= 10) {
-                timer?.invalidate()
-                playKickTimer = null
+            AVPlayerItemStatusFailed -> {
+                val error = playerItem?.error
+                log.e { "AVPlayerItem failed: ${error?.localizedDescription}" }
+                listener?.onError(error?.let { Exception(it.localizedDescription) })
+            }
+            else -> {
+                // Waiting for status
             }
         }
     }
