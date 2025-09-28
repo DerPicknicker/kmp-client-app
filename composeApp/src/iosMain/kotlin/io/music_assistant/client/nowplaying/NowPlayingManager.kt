@@ -55,6 +55,8 @@ class NowPlayingManager(
     override val coroutineContext = Dispatchers.Main + job
 
     private var currentPlayer: PlayerData? = null
+    private var cachedArtworkUrl: String? = null
+    private var cachedArtwork: MPMediaItemArtwork? = null
     private val log = Logger.withTag("NowPlaying")
 
     init {
@@ -157,14 +159,33 @@ class NowPlayingManager(
         // Explicitly set playback state to help presentation
         MPNowPlayingInfoCenter.defaultCenter().playbackState = if (playing) MPNowPlayingPlaybackStatePlaying else MPNowPlayingPlaybackStatePaused
 
-        // Load artwork asynchronously if available
+        // Load artwork asynchronously if available; reuse cached artwork to avoid flicker
         if (!imageUrl.isNullOrBlank()) {
-            fetchArtwork(imageUrl) { artwork ->
-                if (artwork != null) {
-                    info[MPMediaItemPropertyArtwork] = artwork
-                    setNowPlayingInfo(info)
+            if (cachedArtwork != null && cachedArtworkUrl == imageUrl) {
+                info[MPMediaItemPropertyArtwork] = cachedArtwork!!
+                setNowPlayingInfo(info)
+            } else {
+                fetchArtwork(imageUrl) { artwork ->
+                    if (artwork != null) {
+                        cachedArtworkUrl = imageUrl
+                        cachedArtwork = artwork
+                        info[MPMediaItemPropertyArtwork] = artwork
+                        setNowPlayingInfo(info)
+                    } else {
+                        // keep prior cached artwork if fetch fails
+                        cachedArtwork?.let {
+                            info[MPMediaItemPropertyArtwork] = it
+                            setNowPlayingInfo(info)
+                        }
+                    }
                 }
             }
+        } else {
+            // If no image for this item, prefer to keep previous artwork to avoid empty flashes
+            cachedArtwork?.let {
+                info[MPMediaItemPropertyArtwork] = it
+            }
+            setNowPlayingInfo(info)
         }
     }
 

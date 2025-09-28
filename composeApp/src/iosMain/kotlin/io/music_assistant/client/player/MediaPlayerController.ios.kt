@@ -3,9 +3,13 @@
 
 package io.music_assistant.client.player
 
+import platform.AVFAudio.AVAudioSession
+import platform.AVFAudio.AVAudioSessionCategoryPlayback
 import platform.AVFoundation.AVPlayer
 import platform.AVFoundation.AVPlayerItem
 import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
+import platform.AVFoundation.AVPlayerItemStatusFailed
+import platform.AVFoundation.AVPlayerItemStatusReadyToPlay
 import platform.AVFoundation.play
 import platform.AVFoundation.pause
 import platform.AVFoundation.currentTime
@@ -14,6 +18,7 @@ import platform.AVFoundation.duration
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.Foundation.NSNotificationCenter
+import platform.Foundation.NSTimer
 import platform.Foundation.NSURL
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
@@ -24,6 +29,7 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
     private var endObserver: Any? = null
     private var listener: MediaPlayerListener? = null
     private var isPlayingInternal: Boolean = false
+    private var readyTimer: NSTimer? = null
 
     actual fun prepare(
         pathSource: String,
@@ -32,10 +38,12 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         this.listener = listener
         runOnMain {
             releaseInternal()
+            configureAudioSession()
             val url = toNSURL(pathSource)
             val item = AVPlayerItem(uRL = url)
             playerItem = item
             player = AVPlayer(playerItem = item)
+            player?.automaticallyWaitsToMinimizeStalling = true
 
             // Notify completion when item finishes
             endObserver = NSNotificationCenter.defaultCenter.addObserverForName(
@@ -47,8 +55,8 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
                 this.listener?.onAudioCompleted()
             }
 
-            // Signal ready immediately after setting up
-            this.listener?.onReady()
+            // Signal ready only once the item is actually ready
+            observeItemReadiness(item)
         }
     }
 
@@ -103,6 +111,8 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
     }
 
     private fun releaseInternal() {
+        readyTimer?.invalidate()
+        readyTimer = null
         endObserver?.let { NSNotificationCenter.defaultCenter.removeObserver(it) }
         endObserver = null
         player?.pause()
@@ -110,6 +120,37 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         playerItem = null
         isPlayingInternal = false
         listener = null
+    }
+
+    private fun configureAudioSession() {
+        try {
+            val session = AVAudioSession.sharedInstance()
+            session.setCategory(AVAudioSessionCategoryPlayback, error = null)
+            session.setActive(true, error = null)
+        } catch (_: Throwable) {
+            // Best-effort; ignore failures on simulator
+        }
+    }
+
+    private fun observeItemReadiness(item: AVPlayerItem) {
+        readyTimer?.invalidate()
+        readyTimer = NSTimer.scheduledTimerWithTimeInterval(0.1, repeats = true) { timer ->
+            when (item.status) {
+                AVPlayerItemStatusReadyToPlay -> {
+                    timer.invalidate()
+                    readyTimer = null
+                    this.listener?.onReady()
+                }
+                AVPlayerItemStatusFailed -> {
+                    timer.invalidate()
+                    readyTimer = null
+                    this.listener?.onError(item.error)
+                }
+                else -> {
+                    // keep waiting
+                }
+            }
+        }
     }
 
     private fun runOnMain(block: () -> Unit) {
