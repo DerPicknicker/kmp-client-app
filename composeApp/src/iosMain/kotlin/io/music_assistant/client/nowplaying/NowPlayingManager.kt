@@ -146,21 +146,45 @@ class NowPlayingManager(
         val playing = playerData.player.isPlaying
         val imageUrl = track?.imageInfo?.url(serverUrl)
 
+        log.i { "Now Playing update: title=$title, artist=$artist, durationMs=$durationMs, elapsedMs=$elapsedMs, playing=$playing" }
+
         val info = mutableMapOf<Any?, Any?>()
         title?.let { info[MPMediaItemPropertyTitle] = it }
         if (artist.isNotEmpty()) info[MPMediaItemPropertyArtist] = artist
         if (album.isNotEmpty()) info[MPMediaItemPropertyAlbumTitle] = album
-        durationMs?.let { info[MPMediaItemPropertyPlaybackDuration] = it.toDouble() / 1000.0 }
+
+        // Ensure duration is positive before setting it
+        durationMs?.takeIf { it > 0 }?.let { info[MPMediaItemPropertyPlaybackDuration] = it.toDouble() / 1000.0 }
+        if (durationMs != null && durationMs <= 0) {
+            log.w { "Invalid duration: $durationMs ms, skipping duration setting" }
+        }
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedMs.toDouble() / 1000.0
         info[MPNowPlayingInfoPropertyPlaybackRate] = if (playing) 1.0 else 0.0
         info[MPNowPlayingInfoPropertyIsLiveStream] = false
         info[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaTypeAudio
+
+        // Additional properties that might help with Control Center display
+        if (durationMs != null && durationMs > 0) {
+            info["playbackDuration"] = durationMs.toDouble() / 1000.0
+        }
+        if (elapsedMs > 0) {
+            info["playbackElapsedTime"] = elapsedMs.toDouble() / 1000.0
+        }
 
         // Apply base metadata immediately
         log.i { "Update Now Playing: title=$title, artist=$artist, album=$album, playing=$playing" }
         setNowPlayingInfo(info)
         // Explicitly set playback state to help presentation
         MPNowPlayingInfoCenter.defaultCenter().playbackState = if (playing) MPNowPlayingPlaybackStatePlaying else MPNowPlayingPlaybackStatePaused
+
+        // Re-enable remote commands when updating Now Playing info
+        val center = MPRemoteCommandCenter.sharedCommandCenter()
+        center.togglePlayPauseCommand.enabled = true
+        center.playCommand.enabled = true
+        center.pauseCommand.enabled = true
+        center.nextTrackCommand.enabled = true
+        center.previousTrackCommand.enabled = true
+        center.changePlaybackPositionCommand?.enabled = true
 
         // Load artwork asynchronously if available; reuse cached artwork to avoid flicker
         if (!imageUrl.isNullOrBlank()) {
