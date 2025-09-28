@@ -39,11 +39,8 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
     private var player: AVPlayer? = null
     private var playerItem: AVPlayerItem? = null
     private var endObserver: Any? = null
-    private var stallObserver: Any? = null
     private var listener: MediaPlayerListener? = null
     private val log = Logger.withTag("MediaPlayerController")
-    private var observations = mutableListOf<KVObservation>()
-    private var isPlayerReady = false
 
     actual fun prepare(
         pathSource: String,
@@ -68,32 +65,15 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
                 this.listener?.onAudioCompleted()
             }
 
-            // Try to recover from stalls by nudging playback
-            stallObserver = NSNotificationCenter.defaultCenter.addObserverForName(
-                name = AVPlayerItemPlaybackStalledNotification,
-                `object` = item,
-                queue = null
-            ) { _ ->
-                log.w { "Playback stalled; trying to resume" }
-                if (isPlayerReady) {
-                    player?.play()
-                }
-            }
 
-            // KVO observations for state changes
-            observations.add(item.observe("status") { handlePlayerStateChange() })
-            observations.add(player!!.observe("timeControlStatus") { handlePlayerStateChange() })
-            observations.add(player!!.observe("rate") { handlePlayerStateChange() })
+            // Signal ready immediately; AVPlayer will buffer as needed
+            listener.onReady()
         }
     }
 
     actual fun start() {
         runOnMain {
-            if (isPlayerReady) {
-                player?.play()
-            } else {
-                log.w { "Player not ready, cannot start playback" }
-            }
+            player?.play()
         }
     }
 
@@ -139,17 +119,12 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
     }
 
     private fun releaseInternal() {
-        observations.forEach { it.invalidate() }
-        observations.clear()
         endObserver?.let { NSNotificationCenter.defaultCenter.removeObserver(it) }
         endObserver = null
-        stallObserver?.let { NSNotificationCenter.defaultCenter.removeObserver(it) }
-        stallObserver = null
         player?.pause()
         player = null
         playerItem = null
         listener = null
-        isPlayerReady = false
     }
 
     private fun configureAudioSession() {
@@ -158,36 +133,6 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         log.d { "Audio session configuration skipped" }
     }
 
-    private fun handlePlayerStateChange() {
-        val itemStatus = playerItem?.status ?: return
-        val playerStatus = player?.timeControlStatus ?: return
-
-        when (itemStatus) {
-            AVPlayerItemStatusReadyToPlay -> {
-                log.i { "Player item ready to play" }
-                isPlayerReady = true
-                listener?.onReady()
-
-                // Log detailed status when ready
-                when (playerStatus) {
-                    AVPlayerTimeControlStatusPlaying -> log.i { "Status: Playing" }
-                    AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate -> {
-                        val reason = player?.reasonForWaitingToPlay
-                        log.i { "Status: Waiting to play ($reason)" }
-                    }
-                    else -> log.i { "Status: Paused/Other" }
-                }
-            }
-            AVPlayerItemStatusFailed -> {
-                val error = playerItem?.error
-                log.e { "AVPlayerItem failed: ${error?.localizedDescription}" }
-                listener?.onError(error?.let { e -> Exception(e.localizedDescription) })
-            }
-            else -> {
-                // Waiting for status
-            }
-        }
-    }
 
     private fun runOnMain(block: () -> Unit) {
         dispatch_async(dispatch_get_main_queue(), block)
