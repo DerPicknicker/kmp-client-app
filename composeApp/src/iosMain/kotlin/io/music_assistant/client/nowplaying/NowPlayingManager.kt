@@ -74,6 +74,21 @@ class NowPlayingManager(
                 val builtin = list.firstOrNull { it.player.isBuiltin }
                 val active = builtin ?: list.firstOrNull { it.player.isPlaying } ?: list.firstOrNull()
                 currentPlayer = active
+
+                // Enable commands immediately when we have an active player
+                if (active != null) {
+                    dispatch_async(dispatch_get_main_queue()) {
+                        val center = MPRemoteCommandCenter.sharedCommandCenter()
+                        log.i { "Enabling remote commands for newly active player" }
+                        center.togglePlayPauseCommand.enabled = true
+                        center.playCommand.enabled = true
+                        center.pauseCommand.enabled = true
+                        center.nextTrackCommand.enabled = true
+                        center.previousTrackCommand.enabled = true
+                        center.changePlaybackPositionCommand?.enabled = true
+                    }
+                }
+
                 active?.let { updateNowPlaying(it, multiplePlayers = list.size > 1) }
             }
         }
