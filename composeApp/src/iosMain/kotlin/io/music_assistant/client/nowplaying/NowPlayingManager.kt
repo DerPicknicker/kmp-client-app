@@ -164,6 +164,8 @@ class NowPlayingManager(
         val artist = track?.subtitle ?: ""
         val album = track?.album?.name ?: ""
         val durationMs = track?.duration?.toLong()?.takeIf { it > 0 }?.let { it * 1000 }
+        // Additional validation: ensure duration is never negative
+        val safeDurationMs = durationMs?.coerceAtLeast(1L) ?: 180000L
         val elapsedMs = playerData.queue?.elapsedTime?.toLong()?.let { it * 1000 } ?: 0L
         val playing = playerData.player.isPlaying
         val imageUrl = track?.imageInfo?.url(serverUrl)
@@ -175,12 +177,11 @@ class NowPlayingManager(
         if (artist.isNotEmpty()) info[MPMediaItemPropertyArtist] = artist
         if (album.isNotEmpty()) info[MPMediaItemPropertyAlbumTitle] = album
 
-        // Ensure duration is positive before setting it, with fallback
-        val finalDuration = durationMs?.takeIf { it > 0 } ?: 180000L // Default 3 minutes if duration is invalid
-        info[MPMediaItemPropertyPlaybackDuration] = finalDuration.toDouble() / 1000.0
+        // Use the safe duration value
+        info[MPMediaItemPropertyPlaybackDuration] = safeDurationMs.toDouble() / 1000.0
 
         if (durationMs != null && durationMs <= 0) {
-            log.w { "Invalid duration: $durationMs ms, using fallback: $finalDuration ms" }
+            log.w { "Invalid duration: $durationMs ms, using safe duration: $safeDurationMs ms" }
         }
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedMs.toDouble() / 1000.0
         info[MPNowPlayingInfoPropertyPlaybackRate] = if (playing) 1.0 else 0.0
@@ -188,13 +189,13 @@ class NowPlayingManager(
         info[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaTypeAudio
 
         // Add playback progress for better Control Center support
-        if (finalDuration > 0) {
-            val progress = elapsedMs.toDouble() / finalDuration.toDouble()
+        if (safeDurationMs > 0) {
+            val progress = elapsedMs.toDouble() / safeDurationMs.toDouble()
             info["playbackProgress"] = progress.coerceIn(0.0, 1.0)
         }
 
         // Additional properties that might help with Control Center display
-        info["playbackDuration"] = finalDuration.toDouble() / 1000.0
+        info["playbackDuration"] = safeDurationMs.toDouble() / 1000.0
         info["playbackElapsedTime"] = elapsedMs.toDouble() / 1000.0
 
         // Ensure we have a valid playback queue identifier for better Control Center support
@@ -227,18 +228,19 @@ class NowPlayingManager(
                 // When pausing, set playback state to paused AND update playback rate to 0.0
                 infoCenter.playbackState = MPNowPlayingPlaybackStatePaused
                 currentInfo[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
+                // Update elapsed time to current position when pausing
                 currentInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedMs.toDouble() / 1000.0
-                log.i { "Set to Paused state with rate 0.0 and updated elapsed time" }
+                log.i { "Set to Paused state with rate 0.0 and updated elapsed time: ${elapsedMs.toDouble() / 1000.0}s" }
             }
 
             // Update the now playing info
             infoCenter.nowPlayingInfo = currentInfo
         }
 
-        // Re-enable remote commands when updating Now Playing info
+        // Enable remote commands before setting Now Playing info for proper iOS recognition
         dispatch_async(dispatch_get_main_queue()) {
             val center = MPRemoteCommandCenter.sharedCommandCenter()
-            log.i { "Re-enabling remote commands for active player on main thread" }
+            log.i { "Enabling remote commands before Now Playing update" }
             center.togglePlayPauseCommand.enabled = true
             center.playCommand.enabled = true
             center.pauseCommand.enabled = true
