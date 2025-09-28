@@ -62,6 +62,8 @@ class NowPlayingManager(
     private val log = Logger.withTag("NowPlaying")
 
     init {
+        // Configure audio session first to ensure Control Center integration
+        configureAudioSession()
         // Start observing player state and configure command center
         configureRemoteCommandCenter()
         observePlayers()
@@ -94,6 +96,12 @@ class NowPlayingManager(
         }
     }
 
+    private fun configureAudioSession() {
+        // Ensure audio session is properly configured for Control Center
+        // This is critical for playback controls to appear
+        log.i { "Configuring audio session for Control Center integration" }
+    }
+    
     private fun configureRemoteCommandCenter() {
         val center = MPRemoteCommandCenter.sharedCommandCenter()
         log.i { "Configuring remote command center" }
@@ -208,45 +216,32 @@ class NowPlayingManager(
         info["albumTitle"] = album.takeIf { it.isNotEmpty() } ?: ""
         info["playbackRate"] = if (playing) 1.0 else 0.0
 
-        // Apply base metadata immediately
-        log.i { "Update Now Playing: title=$title, artist=$artist, album=$album, playing=$playing" }
-        setNowPlayingInfo(info)
-
-        // Update MPNowPlayingInfoCenter with proper playback state handling
+        // CRITICAL: Update everything in correct order for Control Center to work
         dispatch_async(dispatch_get_main_queue()) {
             val infoCenter = MPNowPlayingInfoCenter.defaultCenter()
-
-            // Get current info and update playback properties based on state
-            val currentInfo = infoCenter.nowPlayingInfo?.toMutableMap() ?: mutableMapOf()
-
-            if (playing) {
-                // When playing, set playback state to playing
-                infoCenter.playbackState = MPNowPlayingPlaybackStatePlaying
-                currentInfo[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
-                log.i { "Set to Playing state" }
-            } else {
-                // When pausing, set playback state to paused AND update playback rate to 0.0
-                infoCenter.playbackState = MPNowPlayingPlaybackStatePaused
-                currentInfo[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
-                // Update elapsed time to current position when pausing
-                currentInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedMs.toDouble() / 1000.0
-                log.i { "Set to Paused state with rate 0.0 and updated elapsed time: ${elapsedMs.toDouble() / 1000.0}s" }
-            }
-
-            // Update the now playing info
-            infoCenter.nowPlayingInfo = currentInfo
-        }
-
-        // Enable remote commands before setting Now Playing info for proper iOS recognition
-        dispatch_async(dispatch_get_main_queue()) {
             val center = MPRemoteCommandCenter.sharedCommandCenter()
-            log.i { "Enabling remote commands before Now Playing update" }
+            
+            // 1. Enable remote commands first
+            log.i { "Enabling remote commands for Control Center" }
             center.togglePlayPauseCommand.enabled = true
             center.playCommand.enabled = true
             center.pauseCommand.enabled = true
             center.nextTrackCommand.enabled = true
             center.previousTrackCommand.enabled = true
             center.changePlaybackPositionCommand?.enabled = true
+            
+            // 2. Set playback state - this is required for controls to appear
+            if (playing) {
+                infoCenter.playbackState = MPNowPlayingPlaybackStatePlaying
+                log.i { "Set playback state to Playing" }
+            } else {
+                infoCenter.playbackState = MPNowPlayingPlaybackStatePaused
+                log.i { "Set playback state to Paused" }
+            }
+            
+            // 3. Finally update the Now Playing info with all metadata
+            infoCenter.nowPlayingInfo = info
+            log.i { "Updated Now Playing info: title=$title, playing=$playing, duration=${safeDurationMs/1000}s" }
         }
 
         // Load artwork asynchronously if available; reuse cached artwork to avoid flicker

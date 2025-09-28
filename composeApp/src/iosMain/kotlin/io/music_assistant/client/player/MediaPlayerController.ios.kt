@@ -102,9 +102,10 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         runOnMain {
             player?.pause()
             player?.seekToTime(CMTimeMakeWithSeconds(0.0, 600))
-
-            // Note: AVAudioSession deactivation happens automatically when playback stops
-            log.i { "Playback stopped - AVAudioSession should deactivate automatically" }
+            
+            // Deactivate audio session when stopping
+            deactivateAudioSession()
+            log.i { "Playback stopped - AVAudioSession deactivated" }
         }
     }
 
@@ -148,12 +149,65 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         player = null
         playerItem = null
         listener = null
+        deactivateAudioSession()
     }
 
     private fun configureAudioSession() {
-        // TODO: Configure AVAudioSession for proper audio playback
-        // For now, skip this configuration to resolve compilation issues
-        log.d { "Audio session configuration skipped" }
+        try {
+            val audioSession = AVAudioSession.sharedInstance()
+            
+            // Set category to playback for background audio and Control Center integration
+            memScoped {
+                val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+                val setCategorySuccess = audioSession.setCategory(
+                    category = AVAudioSessionCategoryPlayback,
+                    mode = AVAudioSessionModeDefault,
+                    options = 0u,
+                    error = errorPtr.ptr
+                )
+                
+                if (!setCategorySuccess) {
+                    log.e { "Failed to set audio session category: ${errorPtr.value?.localizedDescription}" }
+                } else {
+                    log.i { "Audio session category set to Playback" }
+                }
+                
+                // Activate the audio session
+                val activateSuccess = audioSession.setActive(
+                    active = true,
+                    error = errorPtr.ptr
+                )
+                
+                if (!activateSuccess) {
+                    log.e { "Failed to activate audio session: ${errorPtr.value?.localizedDescription}" }
+                } else {
+                    log.i { "Audio session activated successfully" }
+                }
+            }
+        } catch (e: Exception) {
+            log.e { "Error configuring audio session: ${e.message}" }
+        }
+    }
+    
+    private fun deactivateAudioSession() {
+        try {
+            val audioSession = AVAudioSession.sharedInstance()
+            memScoped {
+                val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+                val deactivateSuccess = audioSession.setActive(
+                    active = false,
+                    error = errorPtr.ptr
+                )
+                
+                if (!deactivateSuccess) {
+                    log.e { "Failed to deactivate audio session: ${errorPtr.value?.localizedDescription}" }
+                } else {
+                    log.i { "Audio session deactivated successfully" }
+                }
+            }
+        } catch (e: Exception) {
+            log.e { "Error deactivating audio session: ${e.message}" }
+        }
     }
 
 
