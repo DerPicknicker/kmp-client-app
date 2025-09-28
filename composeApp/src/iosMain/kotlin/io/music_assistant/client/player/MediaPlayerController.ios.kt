@@ -5,6 +5,7 @@ package io.music_assistant.client.player
 
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryPlayback
+import platform.AVFAudio.AVAudioSessionModeDefault
 import platform.AVFoundation.AVPlayer
 import platform.AVFoundation.AVPlayerItem
 import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
@@ -20,8 +21,13 @@ import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSTimer
 import platform.Foundation.NSURL
+import platform.Foundation.NSError
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
+import kotlinx.cinterop.ObjCObjectVar
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
 
 actual class MediaPlayerController actual constructor(platformContext: PlatformContext) {
     private var player: AVPlayer? = null
@@ -124,7 +130,14 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
     private fun configureAudioSession() {
         try {
             val session = AVAudioSession.sharedInstance()
-            session.setCategory(AVAudioSessionCategoryPlayback, error = null)
+            memScoped {
+                val err = alloc<ObjCObjectVar<NSError?>>()
+                // Category and mode
+                session.setCategory(AVAudioSessionCategoryPlayback, error = err.ptr)
+                session.setMode(AVAudioSessionModeDefault, error = err.ptr)
+                // Activate session
+                session.setActive(true, error = err.ptr)
+            }
         } catch (_: Throwable) {
             // Best-effort; ignore failures on simulator
         }
