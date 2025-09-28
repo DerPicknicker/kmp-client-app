@@ -24,12 +24,22 @@ import UIKit
         do {
             let audioSession = AVAudioSession.sharedInstance()
             
-            // Set category to playback with options for background audio
-            try audioSession.setCategory(
-                .playback,
-                mode: .default,
-                options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP]
-            )
+            // Configure as long-form local playback (music/podcasts), not live stream
+            if #available(iOS 13.0, *) {
+                try audioSession.setCategory(
+                    .playback,
+                    mode: .default,
+                    policy: .longFormAudio,
+                    options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP]
+                )
+            } else {
+                // Fallback for older iOS (should not be used on supported targets)
+                try audioSession.setCategory(
+                    .playback,
+                    mode: .default,
+                    options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP]
+                )
+            }
             
             // Activate the audio session
             try audioSession.setActive(true)
@@ -90,13 +100,16 @@ import UIKit
     
     /// Set initial Now Playing info to register with Control Center
     @objc public func setInitialNowPlayingInfo() {
-        let nowPlayingInfo: [String: Any] = [
+        var nowPlayingInfo: [String: Any] = [
             MPMediaItemPropertyTitle: "Music Assistant",
             MPMediaItemPropertyArtist: "Ready to play",
             MPMediaItemPropertyPlaybackDuration: 0,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: 0,
             MPNowPlayingInfoPropertyPlaybackRate: 0
         ]
+        // Explicitly mark as local long-form audio (not a live stream)
+        nowPlayingInfo[MPNowPlayingInfoPropertyIsLiveStream] = false
+        nowPlayingInfo[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.audio.rawValue
         
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
         MPNowPlayingInfoCenter.default().playbackState = .paused
