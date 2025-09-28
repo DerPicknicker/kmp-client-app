@@ -135,8 +135,8 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
                 // Category and mode
                 session.setCategory(AVAudioSessionCategoryPlayback, error = err.ptr)
                 session.setMode(AVAudioSessionModeDefault, error = err.ptr)
-                // Activate session
-                session.setActive(true, error = err.ptr)
+                // Activate session (withOptions signature in Kotlin/Native)
+                session.setActive(true, withOptions = 0u, error = err.ptr)
             }
         } catch (_: Throwable) {
             // Best-effort; ignore failures on simulator
