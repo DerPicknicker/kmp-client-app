@@ -73,13 +73,17 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
 
     actual fun start() {
         runOnMain {
+            log.i { "Starting playback, rate before: ${player?.rate}" }
             player?.play()
+            log.i { "Playback started, rate after: ${player?.rate}" }
         }
     }
 
     actual fun pause() {
         runOnMain {
+            log.i { "Pausing playback, rate before: ${player?.rate}" }
             player?.pause()
+            log.i { "Playback paused, rate after: ${player?.rate}" }
         }
     }
 
@@ -110,7 +114,12 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         }
     }
 
-    actual fun isPlaying(): Boolean = player?.rate ?: 0.0f > 0.0f
+    actual fun isPlaying(): Boolean {
+        val rate = player?.rate ?: 0.0f
+        val playing = rate > 0.0f
+        log.d { "isPlaying() - rate: $rate, playing: $playing" }
+        return playing
+    }
 
     actual fun release() {
         runOnMain {
