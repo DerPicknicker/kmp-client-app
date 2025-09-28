@@ -43,7 +43,6 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
             val item = AVPlayerItem(uRL = url)
             playerItem = item
             player = AVPlayer(playerItem = item)
-            player?.automaticallyWaitsToMinimizeStalling = true
 
             // Notify completion when item finishes
             endObserver = NSNotificationCenter.defaultCenter.addObserverForName(
@@ -126,7 +125,6 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         try {
             val session = AVAudioSession.sharedInstance()
             session.setCategory(AVAudioSessionCategoryPlayback, error = null)
-            session.setActive(true, error = null)
         } catch (_: Throwable) {
             // Best-effort; ignore failures on simulator
         }
@@ -137,14 +135,15 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         readyTimer = NSTimer.scheduledTimerWithTimeInterval(0.1, repeats = true) { timer ->
             when (item.status) {
                 AVPlayerItemStatusReadyToPlay -> {
-                    timer.invalidate()
+                    timer?.invalidate()
                     readyTimer = null
                     this.listener?.onReady()
                 }
                 AVPlayerItemStatusFailed -> {
-                    timer.invalidate()
+                    timer?.invalidate()
                     readyTimer = null
-                    this.listener?.onError(item.error)
+                    val err = item.error
+                    this.listener?.onError(if (err != null) Exception(err.localizedDescription ?: "AVPlayerItem failed") else null)
                 }
                 else -> {
                     // keep waiting

@@ -201,9 +201,10 @@ class NowPlayingManager(
         }
     }
 
+    @OptIn(kotlinx.cinterop.BetaInteropApi::class)
     private fun fetchArtwork(urlString: String, onResult: (MPMediaItemArtwork?) -> Unit) {
         // Lightweight fetch using Ktor Darwin
-        kotlinx.coroutines.GlobalScope.launch(Dispatchers.Default) {
+        CoroutineScope(Dispatchers.Default).launch {
             try {
                 val client = HttpClient(Darwin)
                 val bytes: ByteArray = client.get(urlString).body()
@@ -216,6 +217,7 @@ class NowPlayingManager(
         }
     }
 
+    @OptIn(kotlinx.cinterop.BetaInteropApi::class)
     private fun bytesToArtwork(bytes: ByteArray): MPMediaItemArtwork? {
         return try {
             val data: NSData = bytes.usePinned { pinned ->
