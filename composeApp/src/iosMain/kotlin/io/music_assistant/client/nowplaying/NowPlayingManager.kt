@@ -151,23 +151,7 @@ class NowPlayingManager(
         info[MPNowPlayingInfoPropertyIsLiveStream] = false
         info[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaTypeAudio
 
-        // Add playback progress for better Control Center support
-        if (safeDurationMs > 0) {
-            val progress = elapsedMs.toDouble() / safeDurationMs.toDouble()
-            info["playbackProgress"] = progress.coerceIn(0.0, 1.0)
-        }
-
-        // Remove nonstandard keys that can confuse the system
-
-        // Ensure we have a valid playback queue identifier for better Control Center support
-        info["playbackQueueIndex"] = 0L
-        info["playbackQueueCount"] = 1L
-
-        // Additional properties that iOS Control Center might need
-        info["title"] = title ?: "Unknown Track"
-        info["artist"] = artist.takeIf { it.isNotEmpty() } ?: "Unknown Artist"
-        info["albumTitle"] = album.takeIf { it.isNotEmpty() } ?: ""
-        info["playbackRate"] = if (playing) 1.0 else 0.0
+        // Don't add non-standard keys - they can prevent controls from showing
 
         // Update Now Playing info - Swift handles command enabling
         dispatch_async(dispatch_get_main_queue()) {
