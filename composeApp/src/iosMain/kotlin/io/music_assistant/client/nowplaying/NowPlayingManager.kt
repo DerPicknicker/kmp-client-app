@@ -60,12 +60,14 @@ class NowPlayingManager(
     private var cachedArtworkUrl: String? = null
     private var cachedArtwork: MPMediaItemArtwork? = null
     private val log = Logger.withTag("NowPlaying")
+    
+    fun getCurrentPlayer(): PlayerData? = currentPlayer
 
     init {
         // Configure audio session first to ensure Control Center integration
         configureAudioSession()
-        // Start observing player state and configure command center
-        configureRemoteCommandCenter()
+        // Set up Swift-based command handlers with Kotlin callbacks
+        setupRemoteCommandHandlers()
         // Set up initial Now Playing info to activate Control Center
         setupInitialNowPlayingInfo()
         observePlayers()
@@ -79,20 +81,7 @@ class NowPlayingManager(
                 val active = builtin ?: list.firstOrNull { it.player.isPlaying } ?: list.firstOrNull()
                 currentPlayer = active
 
-                // Enable commands immediately when we have an active player
-                if (active != null) {
-                    dispatch_async(dispatch_get_main_queue()) {
-                        val center = MPRemoteCommandCenter.sharedCommandCenter()
-                        log.i { "Enabling remote commands for newly active player" }
-                        center.togglePlayPauseCommand.enabled = true
-                        center.playCommand.enabled = true
-                        center.pauseCommand.enabled = true
-                        center.nextTrackCommand.enabled = true
-                        center.previousTrackCommand.enabled = true
-                        center.changePlaybackPositionCommand?.enabled = true
-                    }
-                }
-
+                // Swift handles command enabling - just update Now Playing info
                 active?.let { updateNowPlaying(it, multiplePlayers = list.size > 1) }
             }
         }
@@ -118,85 +107,15 @@ class NowPlayingManager(
         }
     }
     
-    private fun setupInitialNowPlayingInfo() {
-        // Set up initial state to ensure Control Center recognizes the app
-        dispatch_async(dispatch_get_main_queue()) {
-            val center = MPRemoteCommandCenter.sharedCommandCenter()
-            // Enable all commands initially
-            center.playCommand.enabled = true
-            center.pauseCommand.enabled = true
-            center.togglePlayPauseCommand.enabled = true
-            center.nextTrackCommand.enabled = true
-            center.previousTrackCommand.enabled = true
-            center.changePlaybackPositionCommand?.enabled = true
-            log.i { "Initial remote commands enabled" }
-        }
+    private fun setupRemoteCommandHandlers() {
+        // Initialize the singleton handler that Swift will call
+        RemoteCommandHandler.initialize(dataSource, this)
+        log.i { "Remote command handler initialized - Swift will call Kotlin methods" }
     }
     
-    private fun configureRemoteCommandCenter() {
-        // All interactions with MPRemoteCommandCenter must happen on the main thread
-        dispatch_async(dispatch_get_main_queue()) {
-            val center = MPRemoteCommandCenter.sharedCommandCenter()
-            log.i { "Configuring remote command center" }
-
-            fun MPRemoteCommand.setHandler(handler: (MPRemoteCommandEvent?) -> MPRemoteCommandHandlerStatus) {
-                addTargetWithHandler { event -> handler(event) }
-            }
-
-            // Enable commands - they will be re-enabled when we have an active player
-            center.togglePlayPauseCommand.enabled = true
-            center.togglePlayPauseCommand.setHandler {
-                log.i { "Toggle play/pause from Control Center" }
-                currentPlayer?.let { dataSource.playerAction(it, PlayerAction.TogglePlayPause) }
-                    ?: log.w { "No current player available for toggle play/pause" }
-                MPRemoteCommandHandlerStatusSuccess
-            }
-
-            center.playCommand.enabled = true
-            center.playCommand.setHandler {
-                log.i { "Play from Control Center" }
-                currentPlayer?.let { dataSource.playerAction(it, PlayerAction.TogglePlayPause) }
-                    ?: log.w { "No current player available for play" }
-                MPRemoteCommandHandlerStatusSuccess
-            }
-
-            center.pauseCommand.enabled = true
-            center.pauseCommand.setHandler {
-                log.i { "Pause from Control Center" }
-                currentPlayer?.let { dataSource.playerAction(it, PlayerAction.TogglePlayPause) }
-                    ?: log.w { "No current player available for pause" }
-                MPRemoteCommandHandlerStatusSuccess
-            }
-
-            center.nextTrackCommand.enabled = true
-            center.nextTrackCommand.setHandler {
-                log.i { "Next track from Control Center" }
-                currentPlayer?.let { dataSource.playerAction(it, PlayerAction.Next) }
-                    ?: log.w { "No current player available for next track" }
-                MPRemoteCommandHandlerStatusSuccess
-            }
-
-            center.previousTrackCommand.enabled = true
-            center.previousTrackCommand.setHandler {
-                log.i { "Previous track from Control Center" }
-                currentPlayer?.let { dataSource.playerAction(it, PlayerAction.Previous) }
-                    ?: log.w { "No current player available for previous track" }
-                MPRemoteCommandHandlerStatusSuccess
-            }
-
-            center.changePlaybackPositionCommand?.let { command ->
-                command.enabled = true
-                command.addTargetWithHandler { event ->
-                    val evt = event as? MPChangePlaybackPositionCommandEvent
-                    val seconds = evt?.positionTime ?: return@addTargetWithHandler MPRemoteCommandHandlerStatusCommandFailed
-                    val sec = seconds.toLong()
-                    log.i { "Seek to $sec s from Control Center" }
-                    currentPlayer?.let { dataSource.playerAction(it, PlayerAction.SeekTo(sec)) }
-                        ?: log.w { "No current player available for seek" }
-                    MPRemoteCommandHandlerStatusSuccess
-                }
-            }
-        }
+    private fun setupInitialNowPlayingInfo() {
+        // Swift handles command setup - we just need to wait for initialization
+        log.i { "Swift AudioSessionHelper will configure commands and Now Playing" }
     }
 
     private fun updateNowPlaying(playerData: PlayerData, multiplePlayers: Boolean) {
@@ -250,21 +169,11 @@ class NowPlayingManager(
         info["albumTitle"] = album.takeIf { it.isNotEmpty() } ?: ""
         info["playbackRate"] = if (playing) 1.0 else 0.0
 
-        // CRITICAL: Update everything in correct order for Control Center to work
+        // Update Now Playing info - Swift handles command enabling
         dispatch_async(dispatch_get_main_queue()) {
             val infoCenter = MPNowPlayingInfoCenter.defaultCenter()
-            val center = MPRemoteCommandCenter.sharedCommandCenter()
             
-            // 1. Enable remote commands first
-            log.i { "Enabling remote commands for Control Center" }
-            center.togglePlayPauseCommand.enabled = true
-            center.playCommand.enabled = true
-            center.pauseCommand.enabled = true
-            center.nextTrackCommand.enabled = true
-            center.previousTrackCommand.enabled = true
-            center.changePlaybackPositionCommand?.enabled = true
-            
-            // 2. Set playback state - this is required for controls to appear
+            // Set playback state
             if (playing) {
                 infoCenter.playbackState = MPNowPlayingPlaybackStatePlaying
                 log.i { "Set playback state to Playing" }
@@ -273,7 +182,7 @@ class NowPlayingManager(
                 log.i { "Set playback state to Paused" }
             }
             
-            // 3. Finally update the Now Playing info with all metadata
+            // Update the Now Playing info with all metadata
             infoCenter.nowPlayingInfo = info
             log.i { "Updated Now Playing info: title=$title, playing=$playing, duration=${safeDurationMs/1000}s" }
         }

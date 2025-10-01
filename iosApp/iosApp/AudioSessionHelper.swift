@@ -2,11 +2,13 @@ import Foundation
 import AVFoundation
 import MediaPlayer
 import UIKit
+import ComposeApp
 
 @objc public class AudioSessionHelper: NSObject {
     
     @objc public static let shared = AudioSessionHelper()
     private var isConfigured = false
+    private var commandHandlersConfigured = false
     
     private override init() {
         super.init()
@@ -81,7 +83,79 @@ import UIKit
         }
     }
     
-    /// Ensure Control Center controls are enabled
+    /// Configure remote command handlers - these will call into Kotlin code
+    @objc public func configureRemoteCommandHandlers() {
+        guard !commandHandlersConfigured else {
+            print("[AudioSessionHelper] Command handlers already configured")
+            return
+        }
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            let commandCenter = MPRemoteCommandCenter.shared()
+            
+            // Play/Pause toggle command
+            commandCenter.togglePlayPauseCommand.isEnabled = true
+            commandCenter.togglePlayPauseCommand.addTarget { event in
+                print("[AudioSessionHelper] Toggle play/pause command received")
+                RemoteCommandHandler.shared.handlePlayPause()
+                return .success
+            }
+            
+            // Play command
+            commandCenter.playCommand.isEnabled = true
+            commandCenter.playCommand.addTarget { event in
+                print("[AudioSessionHelper] Play command received")
+                RemoteCommandHandler.shared.handlePlay()
+                return .success
+            }
+            
+            // Pause command
+            commandCenter.pauseCommand.isEnabled = true
+            commandCenter.pauseCommand.addTarget { event in
+                print("[AudioSessionHelper] Pause command received")
+                RemoteCommandHandler.shared.handlePause()
+                return .success
+            }
+            
+            // Next track command
+            commandCenter.nextTrackCommand.isEnabled = true
+            commandCenter.nextTrackCommand.addTarget { event in
+                print("[AudioSessionHelper] Next track command received")
+                RemoteCommandHandler.shared.handleNext()
+                return .success
+            }
+            
+            // Previous track command
+            commandCenter.previousTrackCommand.isEnabled = true
+            commandCenter.previousTrackCommand.addTarget { event in
+                print("[AudioSessionHelper] Previous track command received")
+                RemoteCommandHandler.shared.handlePrevious()
+                return .success
+            }
+            
+            // Seek command
+            commandCenter.changePlaybackPositionCommand.isEnabled = true
+            commandCenter.changePlaybackPositionCommand.addTarget { event in
+                if let event = event as? MPChangePlaybackPositionCommandEvent {
+                    print("[AudioSessionHelper] Seek command received: \(event.positionTime)s")
+                    RemoteCommandHandler.shared.handleSeek(positionSeconds: event.positionTime)
+                    return .success
+                }
+                return .commandFailed
+            }
+            
+            // Disable commands we don't support
+            commandCenter.skipForwardCommand.isEnabled = false
+            commandCenter.skipBackwardCommand.isEnabled = false
+            
+            self.commandHandlersConfigured = true
+            print("[AudioSessionHelper] Remote command handlers configured successfully")
+        }
+    }
+    
+    /// Enable/disable remote controls
     @objc public func enableRemoteControls() {
         DispatchQueue.main.async {
             let commandCenter = MPRemoteCommandCenter.shared()

@@ -10,7 +10,13 @@ struct ComposeView: UIViewControllerRepresentable {
         AudioSessionHelper.shared.setInitialNowPlayingInfo()
         AudioSessionHelper.shared.prepareForPlayback()
         
-        return MainViewControllerKt.MainViewController()
+        // Create the main view controller which initializes NowPlayingManager and RemoteCommandHandler
+        let viewController = MainViewControllerKt.MainViewController()
+        
+        // Now configure the Swift command handlers that will call into Kotlin
+        AudioSessionHelper.shared.configureRemoteCommandHandlers()
+        
+        return viewController
     }
 
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
