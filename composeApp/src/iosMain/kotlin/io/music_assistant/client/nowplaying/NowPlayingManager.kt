@@ -25,6 +25,9 @@ class NowPlayingManager(
 
     private var currentPlayer: PlayerData? = null
     private val log = Logger.withTag("NowPlaying")
+    
+    // Cache to prevent unnecessary updates
+    private var lastUpdateKey: String = ""
 
     fun getCurrentPlayer(): PlayerData? = currentPlayer
 
@@ -36,7 +39,7 @@ class NowPlayingManager(
 
     private fun observePlayers() {
         launch {
-            // Debounce to 500ms to reduce update frequency
+            // Debounce and only update when something meaningful changes
             dataSource.playersData.debounce(500).collectLatest { list ->
                 val builtin = list.firstOrNull { it.player.isBuiltin }
                 val active = builtin ?: list.firstOrNull { it.player.isPlaying } ?: list.firstOrNull()
@@ -62,7 +65,16 @@ class NowPlayingManager(
             playerData.player.isPlaying
         }
         
-        val imageUrl = track?.imageInfo?.url(serverUrl)
+        val imageUrl = track?.imageInfo?.url(serverUrl) ?: ""
+        
+        // Create a key from meaningful properties (not elapsed time)
+        val updateKey = "$title|$artist|$album|$isPlaying|$imageUrl"
+        
+        // Only update if something meaningful changed
+        if (updateKey == lastUpdateKey) {
+            return
+        }
+        lastUpdateKey = updateKey
 
         log.i { "$title - ${if (isPlaying) "Playing" else "Paused"}" }
 

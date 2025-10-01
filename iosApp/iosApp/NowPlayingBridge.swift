@@ -11,6 +11,8 @@ import ComposeApp
     @objc public static let shared = NowPlayingBridge()
     
     private var isConfigured = false
+    private var cachedArtworkUrl: String?
+    private var cachedArtwork: MPMediaItemArtwork?
     
     private override init() {
         super.init()
@@ -129,7 +131,9 @@ import ComposeApp
         isPlaying: Bool,
         artworkUrl: String?
     ) {
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
             var nowPlayingInfo = [String: Any]()
             
             // Basic metadata
@@ -146,11 +150,16 @@ import ComposeApp
             nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedSeconds
             nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
             
-            // Media type - this is critical for iOS to show controls
+            // Media type - this is CRITICAL for iOS to show controls
             nowPlayingInfo[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.audio.rawValue
             nowPlayingInfo[MPNowPlayingInfoPropertyIsLiveStream] = false
             
-            // Update Now Playing info
+            // Use cached artwork if available
+            if let cached = self.cachedArtwork {
+                nowPlayingInfo[MPMediaItemPropertyArtwork] = cached
+            }
+            
+            // Update Now Playing info ONCE with all data
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
             
             // Update playback state - CRITICAL for controls to appear
@@ -158,13 +167,20 @@ import ComposeApp
             
             print("[NowPlayingBridge] Updated: \(title) - \(isPlaying ? "Playing" : "Paused")")
             
-            // Load artwork asynchronously if provided
-            if let urlString = artworkUrl, !urlString.isEmpty {
-                self.loadArtwork(from: urlString) { artwork in
+            // Load artwork only if URL changed
+            if let urlString = artworkUrl, !urlString.isEmpty, urlString != self.cachedArtworkUrl {
+                self.cachedArtworkUrl = urlString
+                self.loadArtwork(from: urlString) { [weak self] artwork in
+                    guard let self = self else { return }
                     if let artwork = artwork {
-                        var updatedInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-                        updatedInfo[MPMediaItemPropertyArtwork] = artwork
-                        MPNowPlayingInfoCenter.default().nowPlayingInfo = updatedInfo
+                        self.cachedArtwork = artwork
+                        // Update artwork without touching other fields
+                        DispatchQueue.main.async {
+                            var updatedInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+                            updatedInfo[MPMediaItemPropertyArtwork] = artwork
+                            MPNowPlayingInfoCenter.default().nowPlayingInfo = updatedInfo
+                            print("[NowPlayingBridge] Artwork loaded")
+                        }
                     }
                 }
             }
