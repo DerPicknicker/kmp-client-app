@@ -28,13 +28,7 @@ import platform.Foundation.NSURL
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 import co.touchlab.kermit.Logger
-import platform.MediaPlayer.MPNowPlayingInfoCenter
-import platform.MediaPlayer.MPNowPlayingInfoPropertyElapsedPlaybackTime
-import platform.MediaPlayer.MPNowPlayingInfoPropertyPlaybackRate
-import platform.MediaPlayer.MPNowPlayingPlaybackStatePaused
-import platform.MediaPlayer.MPNowPlayingPlaybackStatePlaying
 import platform.MediaPlayer.MPNowPlayingSession
-import platform.Foundation.NSArray
 
 actual class MediaPlayerController actual constructor(platformContext: PlatformContext) {
     private var player: AVPlayer? = null
@@ -93,18 +87,8 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
             
             player?.play()
             log.i { "Playback started, rate after: ${player?.rate}" }
-
-            // Immediately reflect playing state in Now Playing for proper lock screen controls
-            try {
-                val center = MPNowPlayingInfoCenter.defaultCenter()
-                val current = player?.currentTime()?.let { CMTimeGetSeconds(it) } ?: 0.0
-                val info = (center.nowPlayingInfo as? Map<Any?, Any?>)?.toMutableMap() ?: mutableMapOf()
-                info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
-                info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = current
-                center.nowPlayingInfo = info
-                center.playbackState = MPNowPlayingPlaybackStatePlaying
-                log.i { "Updated Now Playing to Playing (elapsed=${current}s)" }
-            } catch (_: Throwable) { }
+            
+            // NowPlayingManager will update Now Playing info based on player state
         }
     }
 
@@ -113,20 +97,8 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
             log.i { "Pausing playback, rate before: ${player?.rate}" }
             player?.pause()
             log.i { "Playback paused, rate after: ${player?.rate}" }
-
-            // Note: AVAudioSession deactivation is handled by the OS when playback stops
-            // The key is to update MPNowPlayingInfoCenter with correct playback rate
-            try {
-                val center = MPNowPlayingInfoCenter.defaultCenter()
-                val current = player?.currentTime()?.let { CMTimeGetSeconds(it) } ?: 0.0
-                val info = (center.nowPlayingInfo as? Map<Any?, Any?>)?.toMutableMap() ?: mutableMapOf()
-                info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
-                info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = current
-                center.nowPlayingInfo = info
-                center.playbackState = MPNowPlayingPlaybackStatePaused
-                log.i { "Updated Now Playing to Paused (elapsed=${current}s)" }
-            } catch (_: Throwable) { }
-            log.i { "Playback paused - Control Center should update via MPNowPlayingInfoCenter" }
+            
+            // NowPlayingManager will update Now Playing info based on player state
         }
     }
 
@@ -156,13 +128,7 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
     actual fun seekTo(seconds: Long) {
         runOnMain {
             player?.seekToTime(CMTimeMakeWithSeconds(seconds.toDouble() / 1000.0, 600))
-            // Keep Now Playing elapsed time in sync
-            try {
-                val center = MPNowPlayingInfoCenter.defaultCenter()
-                val info = (center.nowPlayingInfo as? Map<Any?, Any?>)?.toMutableMap() ?: mutableMapOf()
-                info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = seconds.toDouble() / 1000.0
-                center.nowPlayingInfo = info
-            } catch (_: Throwable) { }
+            // NowPlayingManager will update Now Playing info based on player state
         }
     }
 

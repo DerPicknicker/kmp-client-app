@@ -129,10 +129,17 @@ class NowPlayingManager(
         val safeDurationMs = durationMs?.coerceAtLeast(1L) ?: 180000L
         val elapsedMs = playerData.queue?.elapsedTime?.toLong()?.let { it * 1000 }
             ?.coerceAtLeast(0L) ?: 0L
-        val playing = playerData.player.isPlaying
+        
+        // For builtin player, use actual state instead of server's lagging view
+        val playing = if (playerData.player.id == dataSource.getBuiltinPlayerId()) {
+            dataSource.isBuiltinPlayerActuallyPlaying()
+        } else {
+            playerData.player.isPlaying
+        }
+        
         val imageUrl = track?.imageInfo?.url(serverUrl)
 
-        log.i { "Now Playing update: title=$title, artist=$artist, durationMs=$durationMs, elapsedMs=$elapsedMs, playing=$playing" }
+        log.i { "Now Playing update: title=$title, artist=$artist, durationMs=$durationMs, elapsedMs=$elapsedMs, playing=$playing (builtin=${playerData.player.id == dataSource.getBuiltinPlayerId()})" }
 
         val info = mutableMapOf<Any?, Any?>()
         title?.let { info[MPMediaItemPropertyTitle] = it }

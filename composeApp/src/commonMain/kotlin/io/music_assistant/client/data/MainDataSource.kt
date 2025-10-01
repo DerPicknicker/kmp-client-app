@@ -79,6 +79,14 @@ class MainDataSource(
 
     override val coroutineContext: CoroutineContext
         get() = SupervisorJob() + Dispatchers.IO
+    
+    /** Get the actual playing state of the builtin player (not the server's view) */
+    fun isBuiltinPlayerActuallyPlaying(): Boolean {
+        return localPlayerController.isPlaying()
+    }
+    
+    /** Get the builtin player ID */
+    fun getBuiltinPlayerId(): String = localPlayerId
 
     private val _serverPlayers = MutableStateFlow<List<Player>>(emptyList())
     private val _queues = MutableStateFlow<List<Queue>>(emptyList())
