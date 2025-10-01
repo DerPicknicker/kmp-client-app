@@ -69,12 +69,16 @@ Android (androidMain)
 
 iOS (iosMain in KMP)
 - `MainViewController.kt`: `ComposeUIViewController { App() }` with Koin `iosModule()` initialization.
-- DI: `IosModule.kt` provides `PlatformContext`.
-- Player actual: `MediaPlayerController.ios.kt` (stubbed — implement for real playback when needed).
+- DI: `IosModule.kt` provides `PlatformContext`, `NowPlayingManager`.
+- Player actual: `MediaPlayerController.ios.kt` using AVPlayer for local playback.
+- Now Playing: `NowPlayingManager.kt` observes players and sends updates via NSNotificationCenter to Swift `NowPlayingBridge`.
+- Remote commands: `RemoteCommandHandler.kt` singleton that Swift calls when Control Center buttons are pressed.
 
 iOS Swift App (iosApp)
 - `iOSApp.swift`: SwiftUI `@main` App hosting `ContentView`.
-- `ContentView.swift`: Wraps KMP `MainViewController()` into SwiftUI via `UIViewControllerRepresentable`.
+- `ContentView.swift`: Wraps KMP `MainViewController()` into SwiftUI; initializes audio session and Now Playing bridge.
+- `AudioSessionHelper.swift`: Configures AVAudioSession for background playback; handles interruptions and route changes.
+- `NowPlayingBridge.swift`: Swift class that owns MPNowPlayingInfoCenter and MPRemoteCommandCenter; observes NSNotifications from Kotlin to update Now Playing info; properly retains command handlers.
 - `Configuration/Config.xcconfig`: `TEAM_ID`, `BUNDLE_ID`, `APP_NAME`.
 - Assets and Xcode project; build phase calls Gradle `:composeApp:embedAndSignAppleFrameworkForXcode` to produce `ComposeApp.framework`.
 
