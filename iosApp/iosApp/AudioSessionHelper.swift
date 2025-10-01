@@ -16,20 +16,18 @@ import ComposeApp
         configureAudioSession()
     }
     
-    /// Configure the audio session for background playback and Control Center integration
+    /// Configure the audio session for background playback
     @objc public func configureAudioSession() {
         guard !isConfigured else {
-            print("[AudioSessionHelper] Audio session already configured")
+            print("[AudioSessionHelper] Already configured")
             return
         }
         
         do {
             let audioSession = AVAudioSession.sharedInstance()
             
-            // Configure as long-form local playback (music/podcasts), not live stream
+            // Configure for music playback with background support
             if #available(iOS 13.0, *) {
-                // With longFormAudio, most route options (AirPlay/A2DP) are not supported.
-                // Use no options to avoid OSStatus -50.
                 try audioSession.setCategory(
                     .playback,
                     mode: .default,
@@ -37,7 +35,6 @@ import ComposeApp
                     options: []
                 )
             } else {
-                // Fallback for older iOS
                 try audioSession.setCategory(
                     .playback,
                     mode: .default,
@@ -48,10 +45,10 @@ import ComposeApp
             // Activate the audio session
             try audioSession.setActive(true)
             
-            print("[AudioSessionHelper] Audio session configured successfully for playback")
+            print("[AudioSessionHelper] Audio session configured")
             isConfigured = true
             
-            // Set up interruption handling
+            // Set up interruption and route change handling
             NotificationCenter.default.addObserver(
                 self,
                 selector: #selector(handleInterruption),
@@ -59,7 +56,6 @@ import ComposeApp
                 object: audioSession
             )
             
-            // Set up route change handling
             NotificationCenter.default.addObserver(
                 self,
                 selector: #selector(handleRouteChange),
@@ -68,153 +64,10 @@ import ComposeApp
             )
             
         } catch {
-            print("[AudioSessionHelper] Failed to configure audio session: \(error.localizedDescription)")
+            print("[AudioSessionHelper] Failed: \(error.localizedDescription)")
         }
     }
     
-    /// Deactivate the audio session
-    @objc public func deactivateAudioSession() {
-        do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setActive(false, options: .notifyOthersOnDeactivation)
-            print("[AudioSessionHelper] Audio session deactivated")
-        } catch {
-            print("[AudioSessionHelper] Failed to deactivate audio session: \(error.localizedDescription)")
-        }
-    }
-    
-    /// Configure remote command handlers - these will call into Kotlin code
-    @objc public func configureRemoteCommandHandlers() {
-        guard !commandHandlersConfigured else {
-            print("[AudioSessionHelper] Command handlers already configured")
-            return
-        }
-        
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            
-            let commandCenter = MPRemoteCommandCenter.shared()
-            
-            // Play/Pause toggle command
-            commandCenter.togglePlayPauseCommand.isEnabled = true
-            commandCenter.togglePlayPauseCommand.addTarget { event in
-                print("[AudioSessionHelper] Toggle play/pause command received")
-                RemoteCommandHandler.shared.handlePlayPause()
-                return .success
-            }
-            
-            // Play command
-            commandCenter.playCommand.isEnabled = true
-            commandCenter.playCommand.addTarget { event in
-                print("[AudioSessionHelper] Play command received")
-                RemoteCommandHandler.shared.handlePlay()
-                return .success
-            }
-            
-            // Pause command
-            commandCenter.pauseCommand.isEnabled = true
-            commandCenter.pauseCommand.addTarget { event in
-                print("[AudioSessionHelper] Pause command received")
-                RemoteCommandHandler.shared.handlePause()
-                return .success
-            }
-            
-            // Next track command
-            commandCenter.nextTrackCommand.isEnabled = true
-            commandCenter.nextTrackCommand.addTarget { event in
-                print("[AudioSessionHelper] Next track command received")
-                RemoteCommandHandler.shared.handleNext()
-                return .success
-            }
-            
-            // Previous track command
-            commandCenter.previousTrackCommand.isEnabled = true
-            commandCenter.previousTrackCommand.addTarget { event in
-                print("[AudioSessionHelper] Previous track command received")
-                RemoteCommandHandler.shared.handlePrevious()
-                return .success
-            }
-            
-            // Seek command
-            commandCenter.changePlaybackPositionCommand.isEnabled = true
-            commandCenter.changePlaybackPositionCommand.addTarget { event in
-                if let event = event as? MPChangePlaybackPositionCommandEvent {
-                    print("[AudioSessionHelper] Seek command received: \(event.positionTime)s")
-                    RemoteCommandHandler.shared.handleSeek(positionSeconds: event.positionTime)
-                    return .success
-                }
-                return .commandFailed
-            }
-            
-            // Disable commands we don't support
-            commandCenter.skipForwardCommand.isEnabled = false
-            commandCenter.skipBackwardCommand.isEnabled = false
-            
-            self.commandHandlersConfigured = true
-            print("[AudioSessionHelper] Remote command handlers configured successfully")
-        }
-    }
-    
-    /// Enable/disable remote controls
-    @objc public func enableRemoteControls() {
-        DispatchQueue.main.async {
-            let commandCenter = MPRemoteCommandCenter.shared()
-            
-            // Enable all playback controls
-            commandCenter.playCommand.isEnabled = true
-            commandCenter.pauseCommand.isEnabled = true
-            commandCenter.togglePlayPauseCommand.isEnabled = true
-            commandCenter.nextTrackCommand.isEnabled = true
-            commandCenter.previousTrackCommand.isEnabled = true
-            commandCenter.changePlaybackPositionCommand.isEnabled = true
-            commandCenter.skipForwardCommand.isEnabled = false
-            commandCenter.skipBackwardCommand.isEnabled = false
-            
-            print("[AudioSessionHelper] Remote controls enabled")
-        }
-    }
-    
-    /// Set initial Now Playing info to register with Control Center
-    @objc public func setInitialNowPlayingInfo() {
-        var nowPlayingInfo: [String: Any] = [
-            MPMediaItemPropertyTitle: "Music Assistant",
-            MPMediaItemPropertyArtist: "Ready to play",
-            MPMediaItemPropertyPlaybackDuration: 0,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: 0,
-            MPNowPlayingInfoPropertyPlaybackRate: 0
-        ]
-        // Explicitly mark as local long-form audio (not a live stream)
-        nowPlayingInfo[MPNowPlayingInfoPropertyIsLiveStream] = false
-        nowPlayingInfo[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.audio.rawValue
-        
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
-        MPNowPlayingInfoCenter.default().playbackState = .paused
-        
-        print("[AudioSessionHelper] Initial Now Playing info set")
-    }
-    
-    /// Prepare for playback - call this before starting audio
-    @objc public func prepareForPlayback() {
-        // Ensure audio session is active
-        do {
-            let audioSession = AVAudioSession.sharedInstance()
-            if !audioSession.isOtherAudioPlaying {
-                try audioSession.setActive(true)
-            }
-            
-            DispatchQueue.main.async {
-                // Enable remote controls
-                self.enableRemoteControls()
-                
-                // Begin receiving remote control events
-                UIApplication.shared.beginReceivingRemoteControlEvents()
-                
-                print("[AudioSessionHelper] Prepared for playback")
-            }
-        } catch {
-            print("[AudioSessionHelper] Failed to prepare for playback: \(error.localizedDescription)")
-        }
-    }
     
     // MARK: - Interruption Handling
     

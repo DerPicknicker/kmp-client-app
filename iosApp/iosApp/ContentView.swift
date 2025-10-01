@@ -5,18 +5,14 @@ import AVFoundation
 
 struct ComposeView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIViewController {
-        // Configure audio session first
+        // 1. Configure audio session for background playback
         AudioSessionHelper.shared.configureAudioSession()
         
-        // Create the main view controller which initializes NowPlayingManager and RemoteCommandHandler
+        // 2. Create the main view controller (initializes Kotlin side)
         let viewController = MainViewControllerKt.MainViewController()
         
-        // Configure command handlers BEFORE enabling commands
-        AudioSessionHelper.shared.configureRemoteCommandHandlers()
-        
-        // Now set initial info and prepare for playback
-        AudioSessionHelper.shared.setInitialNowPlayingInfo()
-        AudioSessionHelper.shared.prepareForPlayback()
+        // 3. Configure Now Playing bridge (command handlers + Now Playing management)
+        NowPlayingBridge.shared.configure()
         
         return viewController
     }
