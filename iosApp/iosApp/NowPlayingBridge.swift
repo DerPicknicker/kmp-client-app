@@ -38,6 +38,14 @@ import ComposeApp
             
             let commandCenter = MPRemoteCommandCenter.shared()
             
+            // clear existing targets to prevent duplicates/conflicts
+            commandCenter.playCommand.removeTarget(nil)
+            commandCenter.pauseCommand.removeTarget(nil)
+            commandCenter.togglePlayPauseCommand.removeTarget(nil)
+            commandCenter.nextTrackCommand.removeTarget(nil)
+            commandCenter.previousTrackCommand.removeTarget(nil)
+            commandCenter.changePlaybackPositionCommand.removeTarget(nil)
+            
             // Configure command handlers
             commandCenter.playCommand.isEnabled = true
             commandCenter.playCommand.addTarget { [weak self] event in
@@ -53,6 +61,7 @@ import ComposeApp
                 return .success
             }
             
+            // Headset button support
             commandCenter.togglePlayPauseCommand.isEnabled = true
             commandCenter.togglePlayPauseCommand.addTarget { [weak self] event in
                 print("[NowPlayingBridge] Toggle play/pause command")
