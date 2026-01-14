@@ -9,6 +9,13 @@ class MPVController: NSObject, PlatformAudioPlayer {
     private let ringBuffer = RingBuffer(capacity: 1024 * 1024 * 4) // 4MB Buffer (~20s CD quality)
     private var listener: MediaPlayerListener?
     
+    // Track if MPV stream has been started
+    private var streamStarted = false
+    private var pendingCodec: String = "pcm"
+    private var pendingSampleRate: Int32 = 48000
+    private var pendingChannels: Int32 = 2
+    private var pendingBitDepth: Int32 = 16
+    
     override init() {
         super.init()
         setupAudioSession()
@@ -116,6 +123,8 @@ class MPVController: NSObject, PlatformAudioPlayer {
         let bytesRead = ringBuffer.read(into: buffer, maxLength: Int(size))
         if bytesRead > 0 {
             print("MPV stream read: \(bytesRead) bytes")
+        } else {
+            print("MPV stream read: 0 bytes (waiting...)")
         }
         return Int64(bytesRead)
     }
@@ -127,31 +136,40 @@ class MPVController: NSObject, PlatformAudioPlayer {
         self.listener = listener
         ringBuffer.clear()
         
-        let codec = codec.lowercased()
+        // Store pending configuration - we'll apply it when first data arrives
+        self.pendingCodec = codec.lowercased()
+        self.pendingSampleRate = sampleRate
+        self.pendingChannels = channels
+        self.pendingBitDepth = bitDepth
+        self.streamStarted = false
         
-        if codec == "pcm" {
+        print("MPV: Stream prepared, waiting for first data before starting playback")
+        listener.onReady()
+    }
+    
+    private func startMpvPlayback() {
+        print("MPV: Starting playback with codec=\(pendingCodec)")
+        
+        if pendingCodec == "pcm" {
             // MPV configuration for raw audio
             setOptionString("demuxer", "rawaudio")
-            setOptionString("demuxer-rawaudio-rate", "\(sampleRate)")
-            setOptionString("demuxer-rawaudio-channels", "\(channels)")
+            setOptionString("demuxer-rawaudio-rate", "\(pendingSampleRate)")
+            setOptionString("demuxer-rawaudio-channels", "\(pendingChannels)")
             
             // Map bitDepth to format (s16le, s32le, etc)
-            let format = (bitDepth == 16) ? "s16le" : "s32le"
+            let format = (pendingBitDepth == 16) ? "s16le" : "s32le"
             setOptionString("demuxer-rawaudio-format", format)
             print("MPV: configured for PCM (rawaudio demuxer)")
         } else {
             // For Opus/Flac, rely on MPV's auto-detection
             setOptionString("demuxer", "auto")
-            print("MPV: configured for \(codec) (auto demuxer)")
+            print("MPV: configured for \(pendingCodec) (auto demuxer)")
         }
         
-        // Trigger loadfile
+        // Now trigger loadfile - data is already in the buffer
         print("MPV: calling loadfile sendspin://stream")
         let result = mpv_command_string(mpv, "loadfile sendspin://stream replace")
         print("MPV: loadfile returned \(result)")
-        
-        listener.onReady()
-        print("MPV: prepareStream completed")
     }
     
     func writeRawPcm(data: KotlinByteArray) {
@@ -165,11 +183,21 @@ class MPVController: NSObject, PlatformAudioPlayer {
             swiftData[i] = UInt8(bitPattern: data.get(index: Int32(i)))
         }
         
+        // Write data first
         ringBuffer.write(swiftData)
+        print("MPV: wrote \(size) bytes to buffer")
+        
+        // Start MPV playback after first data arrives (ensures buffer has data for demuxer)
+        if !streamStarted {
+            streamStarted = true
+            print("MPV: First data received, starting MPV playback")
+            startMpvPlayback()
+        }
     }
     
     func stopRawPcmStream() {
         print("MPV: Stopping stream")
+        streamStarted = false
         ringBuffer.close()  // Signal EOF to blocking read
         mpv_command_string(mpv, "stop")
         ringBuffer.clear()
