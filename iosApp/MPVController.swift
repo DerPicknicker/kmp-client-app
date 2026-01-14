@@ -181,9 +181,9 @@ class MPVController: NSObject, PlatformAudioPlayer {
             setOptionString("demuxer-rawaudio-format", format)
             print("MPV: configured for PCM (rawaudio demuxer)")
         } else {
-            // For Opus/Flac, rely on MPV's auto-detection
-            setOptionString("demuxer", "auto")
-            print("MPV: configured for \(pendingCodec) (auto demuxer)")
+            // For Opus/Flac, use FFmpeg's lavf demuxer for format detection
+            setOptionString("demuxer", "lavf")
+            print("MPV: configured for \(pendingCodec) (lavf demuxer)")
         }
         
         // Now trigger loadfile - data is already in the buffer (header + first chunk)
