@@ -40,6 +40,10 @@ class MPVController: NSObject, PlatformAudioPlayer {
             return
         }
         
+        // Enable verbose logging to diagnose issues
+        setOptionString("terminal", "yes")
+        setOptionString("msg-level", "all=v")
+        
         // Register custom "sendspin://" protocol
         // We pass 'self' as an unmanaged pointer to the callback (cookie)
         let selfPointer = Unmanaged.passUnretained(self).toOpaque()
