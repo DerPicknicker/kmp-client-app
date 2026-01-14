@@ -19,17 +19,8 @@ class MPVController: NSObject, PlatformAudioPlayer {
     
     override init() {
         super.init()
-        setupAudioSession()
+        // Audio session is now managed by NowPlayingManager
         setupMpv()
-    }
-    
-    private func setupAudioSession() {
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            print("Failed to setup AVAudioSession: \(error)")
-        }
     }
     
     private func setupMpv() {
@@ -163,6 +154,9 @@ class MPVController: NSObject, PlatformAudioPlayer {
     private func startMpvPlayback() {
         print("MPV: Starting playback with codec=\(pendingCodec)")
         
+        // Ensure we are the active Now Playing app
+        NowPlayingManager.shared.activatePlayback()
+        
         // Write codec header to buffer FIRST if present
         // This is critical for FLAC/Opus - MPV needs the header to identify the format
         if let headerData = pendingCodecHeader {
@@ -235,7 +229,7 @@ class MPVController: NSObject, PlatformAudioPlayer {
     }
     
     func dispose() {
-        nowPlayingManager.clearNowPlayingInfo()
+        NowPlayingManager.shared.clearNowPlayingInfo()
         if let mpv = mpv {
             mpv_terminate_destroy(mpv)
             self.mpv = nil
@@ -243,16 +237,7 @@ class MPVController: NSObject, PlatformAudioPlayer {
     }
     
     // MARK: - Now Playing (Control Center / Lock Screen)
-    
-    private lazy var nowPlayingManager: NowPlayingManager = {
-        let manager = NowPlayingManager()
-        manager.setCommandHandler { [weak self] command in
-            print("MPV: Remote command received: \(command)")
-            self?.remoteCommandHandler?.onCommand(command: command)
-        }
-        return manager
-    }()
-    
+      
     private var remoteCommandHandler: RemoteCommandHandler?
     
     func updateNowPlaying(
@@ -264,7 +249,7 @@ class MPVController: NSObject, PlatformAudioPlayer {
         elapsedTime: Double,
         playbackRate: Double
     ) {
-        nowPlayingManager.updateNowPlayingInfo(
+        NowPlayingManager.shared.updateNowPlayingInfo(
             title: title,
             artist: artist,
             album: album,
@@ -276,10 +261,16 @@ class MPVController: NSObject, PlatformAudioPlayer {
     }
     
     func clearNowPlaying() {
-        nowPlayingManager.clearNowPlayingInfo()
+        NowPlayingManager.shared.clearNowPlayingInfo()
     }
     
     func setRemoteCommandHandler(handler: RemoteCommandHandler?) {
         self.remoteCommandHandler = handler
+        
+        // Connect shared manager's commands to our handler
+        NowPlayingManager.shared.setCommandHandler { [weak self] command in
+            print("MPV: Remote command received: \(command)")
+            self?.remoteCommandHandler?.onCommand(command: command)
+        }
     }
 }

@@ -11,6 +11,9 @@ struct iOSApp: App {
         // Register the Swift implementation with Kotlin
         PlatformPlayerProvider.shared.player = player
         
+        // Initialize NowPlayingManager early to configure AudioSession
+        _ = NowPlayingManager.shared
+        
         // Required for apps using AudioUnit (like MPV) to appear in Control Center
         // Must be called for remote control events to work with non-AVPlayer audio
         UIApplication.shared.beginReceivingRemoteControlEvents()

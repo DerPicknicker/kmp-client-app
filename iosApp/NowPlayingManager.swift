@@ -8,6 +8,8 @@ class NowPlayingManager {
     
     typealias CommandHandler = (String) -> Void
     
+    static let shared = NowPlayingManager()
+    
     private var commandHandler: CommandHandler?
     private var currentArtworkUrl: String?
     private var artworkLoadTask: URLSessionDataTask?
@@ -22,11 +24,25 @@ class NowPlayingManager {
     private func configureAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [])
+            // Use longFormAudio policy for music streaming apps - required for Control Center
+            try session.setCategory(.playback, mode: .default, policy: .longFormAudio, options: [])
+            try session.setPreferredIOBufferDuration(0.01) // 10ms for low latency
             try session.setActive(true)
-            print("NowPlayingManager: Audio session configured for playback")
+            print("NowPlayingManager: Audio session configured with longFormAudio policy")
         } catch {
             print("NowPlayingManager: Failed to configure audio session: \(error)")
+        }
+    }
+    
+    /// Call this when playback starts to ensure we become the Now Playing app
+    func activatePlayback() {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            // Re-activate session to ensure we're the current Now Playing app
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+            print("NowPlayingManager: Playback activated")
+        } catch {
+            print("NowPlayingManager: Failed to activate playback: \(error)")
         }
     }
     
@@ -45,6 +61,7 @@ class NowPlayingManager {
         elapsedTime: Double,
         playbackRate: Double
     ) {
+        print("NowPlayingManager: updateNowPlayingInfo called - Title: \(title ?? "nil"), Rate: \(playbackRate)")
         var nowPlayingInfo: [String: Any] = [:]
         
         // Basic metadata
@@ -67,14 +84,24 @@ class NowPlayingManager {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
         
         // Load artwork asynchronously if URL changed
-        if let artworkUrl = artworkUrl, artworkUrl != currentArtworkUrl {
-            currentArtworkUrl = artworkUrl
-            loadArtwork(from: artworkUrl) { [weak self] image in
-                guard let self = self, let image = image else { return }
-                self.updateArtwork(image)
+        if let artworkUrl = artworkUrl {
+            if artworkUrl != currentArtworkUrl {
+                currentArtworkUrl = artworkUrl
+                loadArtwork(from: artworkUrl) { [weak self] image in
+                    guard let self = self, let image = image else { return }
+                    self.updateArtwork(image)
+                }
+            } else if let currentImage = self.currentImage {
+                 // Re-apply existing artwork if strictly needed, or just rely on the fact that we preserved it?
+                 // Actually, clearing and resetting might lose the artwork if we don't re-set it.
+                 // Ideally we cache the image.
+                 self.updateArtwork(currentImage)
             }
         }
     }
+    
+    // Cache the current image to re-apply it easily
+    private var currentImage: UIImage?
     
     /// Updates just the elapsed time (for frequent progress updates)
     func updateElapsedTime(_ elapsedTime: Double, playbackRate: Double = 1.0) {
@@ -86,8 +113,10 @@ class NowPlayingManager {
     
     /// Clears the Now Playing info
     func clearNowPlayingInfo() {
+        print("NowPlayingManager: Clearing Now Playing info")
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         currentArtworkUrl = nil
+        currentImage = nil
         artworkLoadTask?.cancel()
     }
     
@@ -131,6 +160,17 @@ class NowPlayingManager {
             return .success
         }
         
+        // Change Playback Position (Scrubbing)
+        commandCenter.changePlaybackPositionCommand.isEnabled = true
+        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+             guard let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
+                 return .commandFailed
+             }
+             // Send "seek:12.5"
+             self?.commandHandler?("seek:\(positionEvent.positionTime)")
+             return .success
+        }
+
         // Note: Skip forward/backward can be added if needed
         commandCenter.skipForwardCommand.isEnabled = false
         commandCenter.skipBackwardCommand.isEnabled = false
@@ -163,6 +203,7 @@ class NowPlayingManager {
                 }
                 
                 print("NowPlayingManager: Artwork loaded successfully (\(image.size.width)x\(image.size.height))")
+                self.currentImage = image
                 completion(image)
             }
         }
