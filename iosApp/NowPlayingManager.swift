@@ -26,11 +26,11 @@ class NowPlayingManager {
     private func configureAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
-            // Use longFormAudio policy for music streaming apps - required for Control Center
-            try session.setCategory(.playback, mode: .default, policy: .longFormAudio, options: [])
-            try session.setPreferredIOBufferDuration(0.01) // 10ms for low latency
+            // Strictly match reference implementation: .playback category, .default mode
+            // Removed .longFormAudio policy as it wasn't in the working reference
+            try session.setCategory(.playback, mode: .default)
             try session.setActive(true)
-            print("NowPlayingManager: Audio session configured with longFormAudio policy")
+            print("NowPlayingManager: Audio session configured")
         } catch {
             print("NowPlayingManager: Failed to configure audio session: \(error)")
         }
@@ -40,9 +40,8 @@ class NowPlayingManager {
     func activatePlayback() {
         do {
             let session = AVAudioSession.sharedInstance()
-            // Re-activate session to ensure we're the current Now Playing app
             try session.setActive(true, options: .notifyOthersOnDeactivation)
-            print("NowPlayingManager: Playback activated")
+            print("NowPlayingManager: Playback activated. Category: \(session.category.rawValue), Mode: \(session.mode.rawValue)")
         } catch {
             print("NowPlayingManager: Failed to activate playback: \(error)")
         }
@@ -80,7 +79,14 @@ class NowPlayingManager {
             nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedTime
             nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = playbackRate
             
-            // Artwork handling (mimicking reference logic)
+            // 1. UPDATE IMMEDIATELY with metadata (so controls appear fast)
+            // Reuse existing cached artwork if effective
+            if trackIdentifier == self.lastTrackIdentifier, let artwork = self.cachedArtwork {
+                nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
+            }
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+            
+            // 2. Fetch new artwork if needed
             if trackIdentifier != self.lastTrackIdentifier {
                 self.lastTrackIdentifier = trackIdentifier
                 self.cachedArtwork = nil
@@ -89,19 +95,14 @@ class NowPlayingManager {
                     print("NowPlayingManager: Loading artwork from \(artworkUrlString)")
                     if let artwork = await self.loadArtworkAsync(from: url) {
                         self.cachedArtwork = artwork
-                        nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
-                        print("NowPlayingManager: Artwork loaded and cached")
+                        // Update info again with artwork
+                        var updatedInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? nowPlayingInfo
+                        updatedInfo[MPMediaItemPropertyArtwork] = artwork
+                        MPNowPlayingInfoCenter.default().nowPlayingInfo = updatedInfo
+                        print("NowPlayingManager: Artwork loaded and cached. Info updated.")
                     }
                 }
-            } else {
-                // Use cached artwork
-                if let artwork = self.cachedArtwork {
-                    nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
-                }
             }
-            
-            // Atomic update
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
         }
     }
     
