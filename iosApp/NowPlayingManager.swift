@@ -1,5 +1,6 @@
 import Foundation
 import MediaPlayer
+import AVFoundation
 
 /// Manages iOS Now Playing info (Control Center, Lock Screen)
 /// and remote command handling (play/pause/next/prev buttons)
@@ -12,7 +13,21 @@ class NowPlayingManager {
     private var artworkLoadTask: URLSessionDataTask?
     
     init() {
+        configureAudioSession()
         setupRemoteCommands()
+    }
+    
+    /// Configures the audio session for background playback
+    /// This MUST be called for Control Center/Lock Screen to work
+    private func configureAudioSession() {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true)
+            print("NowPlayingManager: Audio session configured for playback")
+        } catch {
+            print("NowPlayingManager: Failed to configure audio session: \(error)")
+        }
     }
     
     /// Sets the handler for remote commands (play, pause, next, previous)

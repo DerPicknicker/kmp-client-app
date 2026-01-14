@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration.Companion.seconds
 
@@ -313,7 +314,33 @@ class MessageDispatcher(
 
     private fun handleServerState(message: ServerStateMessage) {
         logger.d { "Received server/state: ${message.payload}" }
-        // Server state message - acknowledged but not used currently
+        
+        // Extract metadata from server/state payload if present
+        message.payload?.let { payload ->
+            try {
+                val metadataElement = payload.jsonObject["metadata"]
+                if (metadataElement != null) {
+                    val metadata = metadataElement.jsonObject
+                    val title = metadata["title"]?.jsonPrimitive?.contentOrNull
+                    val artist = metadata["artist"]?.jsonPrimitive?.contentOrNull
+                    val album = metadata["album"]?.jsonPrimitive?.contentOrNull
+                    val artworkUrl = metadata["artwork_url"]?.jsonPrimitive?.contentOrNull
+                    
+                    // Only update if we have at least title or artist
+                    if (title != null || artist != null) {
+                        _streamMetadata.value = StreamMetadataPayload(
+                            title = title,
+                            artist = artist,
+                            album = album,
+                            artworkUrl = artworkUrl
+                        )
+                        logger.d { "Updated stream metadata from server/state: $title by $artist" }
+                    }
+                }
+            } catch (e: Exception) {
+                logger.w { "Failed to parse server/state metadata: ${e.message}" }
+            }
+        }
     }
 
     // Use monotonic time for clock sync instead of wall clock time
