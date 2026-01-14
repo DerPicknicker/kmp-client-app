@@ -84,7 +84,11 @@ class MPVController: NSObject, PlatformAudioPlayer {
     }
     
     func handleStreamOpen(info: UnsafeMutablePointer<mpv_stream_cb_info>?) -> Int32 {
-        guard let info = info else { return CInt(MPV_ERROR_INVALID_PARAMETER.rawValue) }
+        print("MPV: handleStreamOpen called")
+        guard let info = info else {
+            print("MPV: handleStreamOpen - info is nil!")
+            return CInt(MPV_ERROR_INVALID_PARAMETER.rawValue)
+        }
         
         // Rebind memory to our manual struct definition to access members
         let myInfo = UnsafeMutableRawPointer(info).bindMemory(to: MPVStreamCBInfo.self, capacity: 1)
@@ -97,12 +101,12 @@ class MPVController: NSObject, PlatformAudioPlayer {
              return controller.handleStreamRead(buffer: buf, size: size)
         }
         myInfo.pointee.close = { cookie in
-             // Cleanup if needed
+             print("MPV: stream close callback")
         }
         myInfo.pointee.seek = nil // Not seekable
         myInfo.pointee.size = nil // Unknown size
-        // Note: mpv_stream_cb_size_fn returns int64_t. If we pass nil, MPV assumes unknown.
         
+        print("MPV: handleStreamOpen completed successfully")
         return 0
     }
     
@@ -119,6 +123,7 @@ class MPVController: NSObject, PlatformAudioPlayer {
     // MARK: - PlatformAudioPlayer Protocol
     
     func prepareStream(codec: String, sampleRate: Int32, channels: Int32, bitDepth: Int32, listener: MediaPlayerListener) {
+        print("MPV: prepareStream called with codec=\(codec), rate=\(sampleRate), ch=\(channels)")
         self.listener = listener
         ringBuffer.clear()
         
@@ -131,21 +136,22 @@ class MPVController: NSObject, PlatformAudioPlayer {
             setOptionString("demuxer-rawaudio-channels", "\(channels)")
             
             // Map bitDepth to format (s16le, s32le, etc)
-            let format = (bitDepth == 16) ? "s16le" : "s32le" // simplified
+            let format = (bitDepth == 16) ? "s16le" : "s32le"
             setOptionString("demuxer-rawaudio-format", format)
+            print("MPV: configured for PCM (rawaudio demuxer)")
         } else {
-            // For Opus/Flac, rely on MPV's auto-detection (probably Ogg container)
-            // Reset demuxer to auto or clear specific options if possible
-            // Note: MPV reuses options, so we explicitly set demuxer to auto
+            // For Opus/Flac, rely on MPV's auto-detection
             setOptionString("demuxer", "auto")
-            
-            // We don't need to set rate/channels for container formats, MPV reads headers
+            print("MPV: configured for \(codec) (auto demuxer)")
         }
         
         // Trigger loadfile
-        mpv_command_string(mpv, "loadfile sendspin://stream replace")
+        print("MPV: calling loadfile sendspin://stream")
+        let result = mpv_command_string(mpv, "loadfile sendspin://stream replace")
+        print("MPV: loadfile returned \(result)")
         
         listener.onReady()
+        print("MPV: prepareStream completed")
     }
     
     func writeRawPcm(data: KotlinByteArray) {
