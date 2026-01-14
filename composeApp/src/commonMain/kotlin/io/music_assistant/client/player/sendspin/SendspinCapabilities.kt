@@ -29,7 +29,7 @@ object SendspinCapabilities {
                         bitDepth = 16
                     )
                 ).toMutableList().apply {
-                    if (isOpusSupported) {
+                    if (isNativeOpusDecodingSupported) {
                         add(
                             AudioFormatSpec(
                                 codec = AudioCodec.OPUS,
@@ -47,9 +47,11 @@ object SendspinCapabilities {
                             )
                         )
                     }
+                    if (isNativeFlacDecodingSupported) {
+                        // Add FLAC if supported natively
+                        // For now assuming we might want to announce it if supported
+                    }
                 },
-                    // TODO: Add FLAC later (not implemented yet)
-                ),
                 bufferCapacity = config.bufferCapacityMicros,
                 supportedCommands = listOf()
             ),
