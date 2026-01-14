@@ -326,13 +326,30 @@ class MessageDispatcher(
                     val album = metadata["album"]?.jsonPrimitive?.contentOrNull
                     val artworkUrl = metadata["artwork_url"]?.jsonPrimitive?.contentOrNull
                     
+                    // Extract progress data (duration and elapsed time)
+                    var duration = 0.0
+                    var elapsedTime = 0.0
+                    val progressElement = metadata["progress"]
+                    if (progressElement != null) {
+                        val progress = progressElement.jsonObject
+                        // track_duration is in milliseconds, convert to seconds
+                        val trackDurationMs = progress["track_duration"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+                        duration = trackDurationMs / 1000.0
+                        // track_progress is in milliseconds, convert to seconds
+                        val trackProgressMs = progress["track_progress"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+                        elapsedTime = trackProgressMs / 1000.0
+                        logger.d { "Extracted progress: duration=${duration}s, elapsed=${elapsedTime}s" }
+                    }
+                    
                     // Only update if we have at least title or artist
                     if (title != null || artist != null) {
                         _streamMetadata.value = StreamMetadataPayload(
                             title = title,
                             artist = artist,
                             album = album,
-                            artworkUrl = artworkUrl
+                            artworkUrl = artworkUrl,
+                            duration = duration,
+                            elapsedTime = elapsedTime
                         )
                         logger.d { "Updated stream metadata from server/state: $title by $artist" }
                     }
