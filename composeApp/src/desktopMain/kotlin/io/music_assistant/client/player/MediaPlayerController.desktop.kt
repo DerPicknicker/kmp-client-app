@@ -2,6 +2,8 @@
 
 package io.music_assistant.client.player
 
+import io.music_assistant.client.player.sendspin.model.AudioCodec
+
 /**
  * MediaPlayerController - Desktop stub for Sendspin
  *
@@ -11,9 +13,10 @@ package io.music_assistant.client.player
 actual class MediaPlayerController actual constructor(val platformContext: PlatformContext) {
     private var listener: MediaPlayerListener? = null
 
-    // Sendspin raw PCM streaming methods (stub)
+    // Sendspin streaming methods (stub)
 
-    actual fun prepareRawPcmStream(
+    actual fun prepareStream(
+        codec: AudioCodec,
         sampleRate: Int,
         channels: Int,
         bitDepth: Int,

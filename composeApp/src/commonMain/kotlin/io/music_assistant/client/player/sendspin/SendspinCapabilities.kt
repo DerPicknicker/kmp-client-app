@@ -27,21 +27,27 @@ object SendspinCapabilities {
                         channels = 2,
                         sampleRate = 48000,
                         bitDepth = 16
-                    ),
-                    // Opus - 48kHz, stereo (Android implementation)
-                    AudioFormatSpec(
-                        codec = AudioCodec.OPUS,
-                        channels = 2,
-                        sampleRate = 48000,
-                        bitDepth = 16
-                    ),
-                    // Opus - 48kHz, mono (for efficiency)
-                    AudioFormatSpec(
-                        codec = AudioCodec.OPUS,
-                        channels = 1,
-                        sampleRate = 48000,
-                        bitDepth = 16
                     )
+                ).toMutableList().apply {
+                    if (isOpusSupported) {
+                        add(
+                            AudioFormatSpec(
+                                codec = AudioCodec.OPUS,
+                                channels = 2,
+                                sampleRate = 48000,
+                                bitDepth = 16
+                            )
+                        )
+                        add(
+                            AudioFormatSpec(
+                                codec = AudioCodec.OPUS,
+                                channels = 1,
+                                sampleRate = 48000,
+                                bitDepth = 16
+                            )
+                        )
+                    }
+                },
                     // TODO: Add FLAC later (not implemented yet)
                 ),
                 bufferCapacity = config.bufferCapacityMicros,

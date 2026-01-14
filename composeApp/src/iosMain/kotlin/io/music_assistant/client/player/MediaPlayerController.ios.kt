@@ -2,6 +2,8 @@
 
 package io.music_assistant.client.player
 
+import io.music_assistant.client.player.sendspin.model.AudioCodec
+
 /**
  * MediaPlayerController - iOS stub for Sendspin
  *
@@ -10,47 +12,54 @@ package io.music_assistant.client.player
  */
 actual class MediaPlayerController actual constructor(platformContext: PlatformContext) {
     private var isPrepared: Boolean = false
-    private var callback: MediaPlayerListener? = null
 
-    // Sendspin raw PCM streaming methods (stub)
-
-    actual fun prepareRawPcmStream(
+    // Sendspin streaming methods
+    actual fun prepareStream(
+        codec: AudioCodec,
         sampleRate: Int,
         channels: Int,
         bitDepth: Int,
         listener: MediaPlayerListener
     ) {
-        // TODO: Implement using AVAudioEngine or AudioQueue
-        callback = listener
-        isPrepared = true
-        callback?.onReady()
+        val player = PlatformPlayerProvider.player
+        if (player != null) {
+            player.prepareStream(codec.name.lowercase(), sampleRate, channels, bitDepth, listener)
+            isPrepared = true
+        } else {
+            println("MediaPlayerController: No PlatformAudioPlayer registered!")
+            listener.onError(Exception("Audio Player implementation missing"))
+        }
     }
 
     actual fun writeRawPcm(data: ByteArray): Int {
-        // TODO: Implement raw PCM playback
-        return data.size // Pretend we wrote everything
+        val player = PlatformPlayerProvider.player
+        if (player != null) {
+            player.writeRawPcm(data)
+            return data.size
+        }
+        return 0
     }
 
     actual fun stopRawPcmStream() {
-        // TODO: Implement
+        PlatformPlayerProvider.player?.stopRawPcmStream()
         isPrepared = false
     }
 
     actual fun setVolume(volume: Int) {
-        // TODO: Implement using AVAudioEngine
+        PlatformPlayerProvider.player?.setVolume(volume)
     }
 
     actual fun setMuted(muted: Boolean) {
-        // TODO: Implement using AVAudioEngine
+        PlatformPlayerProvider.player?.setMuted(muted)
     }
 
     actual fun release() {
+        PlatformPlayerProvider.player?.dispose()
         isPrepared = false
-        callback = null
     }
 
     actual fun getCurrentSystemVolume(): Int {
-        // TODO: "Not yet implemented"
+        // TODO: Add getVolume to interface if needed, for now return dummy
         return 100
     }
 }

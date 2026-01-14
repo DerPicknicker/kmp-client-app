@@ -318,12 +318,13 @@ class MessageDispatcher(
 
     // Use monotonic time for clock sync instead of wall clock time
     // This matches the server's relative time base
-    private val startTimeNanos = System.nanoTime()
+    // Use monotonic time for clock sync instead of wall clock time
+    // This matches the server's relative time base
+    private val startMark = kotlin.time.TimeSource.Monotonic.markNow()
 
     private fun getCurrentTimeMicros(): Long {
         // Use relative time since client start, not Unix epoch time
-        val elapsedNanos = System.nanoTime() - startTimeNanos
-        return elapsedNanos / 1000 // Convert to microseconds
+        return startMark.elapsedNow().inWholeMicroseconds
     }
 
     fun close() {

@@ -2,6 +2,8 @@
 
 package io.music_assistant.client.player
 
+import io.music_assistant.client.player.sendspin.model.AudioCodec
+
 /**
  * MediaPlayerController - Sendspin audio player
  *
@@ -10,8 +12,9 @@ package io.music_assistant.client.player
  */
 expect class MediaPlayerController(platformContext: PlatformContext) {
 
-    // Sendspin raw PCM streaming
-    fun prepareRawPcmStream(
+    // Sendspin streaming
+    fun prepareStream(
+        codec: AudioCodec,
         sampleRate: Int,
         channels: Int,
         bitDepth: Int,
