@@ -36,6 +36,19 @@ expect class MediaPlayerController(platformContext: PlatformContext) {
     fun getCurrentSystemVolume(): Int
 
     fun release()
+    
+    // Now Playing (Control Center / Lock Screen) - iOS only, no-op on other platforms
+    fun updateNowPlaying(
+        title: String?,
+        artist: String?,
+        album: String?,
+        artworkUrl: String?,
+        duration: Double,
+        elapsedTime: Double,
+        playbackRate: Double
+    )
+    
+    fun clearNowPlaying()
 }
 
 expect class PlatformContext

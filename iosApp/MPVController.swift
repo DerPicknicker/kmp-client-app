@@ -235,9 +235,51 @@ class MPVController: NSObject, PlatformAudioPlayer {
     }
     
     func dispose() {
+        nowPlayingManager.clearNowPlayingInfo()
         if let mpv = mpv {
             mpv_terminate_destroy(mpv)
             self.mpv = nil
         }
+    }
+    
+    // MARK: - Now Playing (Control Center / Lock Screen)
+    
+    private lazy var nowPlayingManager: NowPlayingManager = {
+        let manager = NowPlayingManager()
+        manager.setCommandHandler { [weak self] command in
+            print("MPV: Remote command received: \(command)")
+            self?.remoteCommandHandler?.onCommand(command: command)
+        }
+        return manager
+    }()
+    
+    private var remoteCommandHandler: RemoteCommandHandler?
+    
+    func updateNowPlaying(
+        title: String?,
+        artist: String?,
+        album: String?,
+        artworkUrl: String?,
+        duration: Double,
+        elapsedTime: Double,
+        playbackRate: Double
+    ) {
+        nowPlayingManager.updateNowPlayingInfo(
+            title: title,
+            artist: artist,
+            album: album,
+            artworkUrl: artworkUrl,
+            duration: duration,
+            elapsedTime: elapsedTime,
+            playbackRate: playbackRate
+        )
+    }
+    
+    func clearNowPlaying() {
+        nowPlayingManager.clearNowPlayingInfo()
+    }
+    
+    func setRemoteCommandHandler(handler: RemoteCommandHandler?) {
+        self.remoteCommandHandler = handler
     }
 }

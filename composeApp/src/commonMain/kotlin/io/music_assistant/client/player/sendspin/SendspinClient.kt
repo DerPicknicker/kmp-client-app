@@ -137,6 +137,9 @@ class SendspinClient(
 
             // Monitor server commands
             monitorServerCommands()
+            
+            // Monitor metadata for Now Playing updates (Control Center / Lock Screen)
+            monitorMetadata()
 
         } catch (e: Exception) {
             logger.e(e) { "Failed to connect to server" }
@@ -275,6 +278,8 @@ class SendspinClient(
                 _playbackState.update { SendspinPlaybackState.Idle }
                 // Stop periodic state reporting
                 stopStateReporting()
+                // Clear Now Playing from Control Center / Lock Screen
+                mediaPlayerController.clearNowPlaying()
             }
         }
 
@@ -322,6 +327,29 @@ class SendspinClient(
         launch {
             messageDispatcher?.serverCommandEvent?.collect { command ->
                 handleServerCommand(command)
+            }
+        }
+    }
+    
+    private fun monitorMetadata() {
+        launch {
+            messageDispatcher?.streamMetadata?.collect { metadata ->
+                if (metadata != null) {
+                    logger.d { "Updating Now Playing: ${metadata.title} by ${metadata.artist}" }
+                    // Note: Duration comes from server/state messages, not stream/metadata
+                    // For now, use 0 duration until we parse server/state progress
+                    mediaPlayerController.updateNowPlaying(
+                        title = metadata.title,
+                        artist = metadata.artist,
+                        album = metadata.album,
+                        artworkUrl = metadata.artworkUrl,
+                        duration = 0.0, // TODO: Get from server/state progress
+                        elapsedTime = 0.0, // TODO: Get from server/state progress
+                        playbackRate = 1.0
+                    )
+                } else {
+                    mediaPlayerController.clearNowPlaying()
+                }
             }
         }
     }

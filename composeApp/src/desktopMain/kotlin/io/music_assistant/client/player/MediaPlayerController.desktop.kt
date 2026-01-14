@@ -49,6 +49,23 @@ actual class MediaPlayerController actual constructor(val platformContext: Platf
         // TODO: Implement using javax.sound
         return 100
     }
+    
+    // Now Playing - no-op on Desktop
+    actual fun updateNowPlaying(
+        title: String?,
+        artist: String?,
+        album: String?,
+        artworkUrl: String?,
+        duration: Double,
+        elapsedTime: Double,
+        playbackRate: Double
+    ) {
+        // Not implemented on Desktop
+    }
+    
+    actual fun clearNowPlaying() {
+        // Not implemented on Desktop
+    }
 
     actual fun release() {
         listener = null

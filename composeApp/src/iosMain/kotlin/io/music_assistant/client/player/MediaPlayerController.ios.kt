@@ -63,6 +63,29 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         // TODO: Add getVolume to interface if needed, for now return dummy
         return 100
     }
+    
+    // Now Playing (Control Center / Lock Screen)
+    actual fun updateNowPlaying(
+        title: String?,
+        artist: String?,
+        album: String?,
+        artworkUrl: String?,
+        duration: Double,
+        elapsedTime: Double,
+        playbackRate: Double
+    ) {
+        PlatformPlayerProvider.player?.updateNowPlaying(
+            title, artist, album, artworkUrl, duration, elapsedTime, playbackRate
+        )
+    }
+    
+    actual fun clearNowPlaying() {
+        PlatformPlayerProvider.player?.clearNowPlaying()
+    }
+    
+    fun setRemoteCommandHandler(handler: RemoteCommandHandler?) {
+        PlatformPlayerProvider.player?.setRemoteCommandHandler(handler)
+    }
 }
 
 actual class PlatformContext

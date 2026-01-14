@@ -421,6 +421,23 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
             }
         }
     }
+    
+    // Now Playing - no-op on Android (uses MediaSession instead)
+    actual fun updateNowPlaying(
+        title: String?,
+        artist: String?,
+        album: String?,
+        artworkUrl: String?,
+        duration: Double,
+        elapsedTime: Double,
+        playbackRate: Double
+    ) {
+        // Android handles Now Playing via MediaSession, not implemented here
+    }
+    
+    actual fun clearNowPlaying() {
+        // Android handles Now Playing via MediaSession, not implemented here
+    }
 
     actual fun release() {
         logger.i { "Releasing MediaPlayerController" }

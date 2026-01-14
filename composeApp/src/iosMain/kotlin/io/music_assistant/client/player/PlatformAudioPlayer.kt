@@ -18,6 +18,28 @@ interface PlatformAudioPlayer {
     fun setVolume(volume: Int)
     fun setMuted(muted: Boolean)
     fun dispose()
+    
+    // Now Playing (Control Center / Lock Screen)
+    fun updateNowPlaying(
+        title: String?,
+        artist: String?,
+        album: String?,
+        artworkUrl: String?,
+        duration: Double,
+        elapsedTime: Double,
+        playbackRate: Double
+    )
+    fun clearNowPlaying()
+    
+    // Remote command handler (set by Kotlin to receive play/pause/next/prev events)
+    fun setRemoteCommandHandler(handler: RemoteCommandHandler?)
+}
+
+/**
+ * Handler for remote commands from Control Center/Lock Screen
+ */
+interface RemoteCommandHandler {
+    fun onCommand(command: String)
 }
 
 /**

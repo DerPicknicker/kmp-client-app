@@ -110,3 +110,10 @@ setOptionString("msg-level", "all=v")
 ## Known Issues
 
 1. **Seek/Scrub Crash**: App crashes with `ArrayIndexOutOfBoundsException` in `ServiceClient.sendRequest` when scrubbing. This is a separate issue in the API layer, not the audio pipeline.
+
+## Future Work
+
+1. **Sample-Accurate Sync**: Current sync is approximate (~50-100ms tolerance). The Kotlin layer schedules chunks at the right time, but once data enters the RingBuffer→MPV pipeline, we lose precise timing control. For sub-10ms sync, consider:
+   - Using `AudioUnit` directly instead of MPV for timing control
+   - Implementing MPV's `ao_push` timing callbacks
+   - Passing timestamps through to the audio output layer
