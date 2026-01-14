@@ -19,11 +19,12 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         sampleRate: Int,
         channels: Int,
         bitDepth: Int,
+        codecHeader: String?,
         listener: MediaPlayerListener
     ) {
         val player = PlatformPlayerProvider.player
         if (player != null) {
-            player.prepareStream(codec.name.lowercase(), sampleRate, channels, bitDepth, listener)
+            player.prepareStream(codec.name.lowercase(), sampleRate, channels, bitDepth, codecHeader, listener)
             isPrepared = true
         } else {
             println("MediaPlayerController: No PlatformAudioPlayer registered!")

@@ -18,6 +18,7 @@ expect class MediaPlayerController(platformContext: PlatformContext) {
         sampleRate: Int,
         channels: Int,
         bitDepth: Int,
+        codecHeader: String?,
         listener: MediaPlayerListener
     )
 

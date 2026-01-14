@@ -15,6 +15,7 @@ class MPVController: NSObject, PlatformAudioPlayer {
     private var pendingSampleRate: Int32 = 48000
     private var pendingChannels: Int32 = 2
     private var pendingBitDepth: Int32 = 16
+    private var pendingCodecHeader: Data? = nil
     
     override init() {
         super.init()
@@ -131,8 +132,8 @@ class MPVController: NSObject, PlatformAudioPlayer {
 
     // MARK: - PlatformAudioPlayer Protocol
     
-    func prepareStream(codec: String, sampleRate: Int32, channels: Int32, bitDepth: Int32, listener: MediaPlayerListener) {
-        print("MPV: prepareStream called with codec=\(codec), rate=\(sampleRate), ch=\(channels)")
+    func prepareStream(codec: String, sampleRate: Int32, channels: Int32, bitDepth: Int32, codecHeader: String?, listener: MediaPlayerListener) {
+        print("MPV: prepareStream called with codec=\(codec), rate=\(sampleRate), ch=\(channels), header=\(codecHeader != nil ? "present" : "nil")")
         self.listener = listener
         ringBuffer.clear()
         
@@ -143,12 +144,27 @@ class MPVController: NSObject, PlatformAudioPlayer {
         self.pendingBitDepth = bitDepth
         self.streamStarted = false
         
+        // Decode base64 codec header if present
+        if let headerBase64 = codecHeader, let headerData = Data(base64Encoded: headerBase64) {
+            self.pendingCodecHeader = headerData
+            print("MPV: Decoded codec header: \(headerData.count) bytes")
+        } else {
+            self.pendingCodecHeader = nil
+        }
+        
         print("MPV: Stream prepared, waiting for first data before starting playback")
         listener.onReady()
     }
     
     private func startMpvPlayback() {
         print("MPV: Starting playback with codec=\(pendingCodec)")
+        
+        // Write codec header to buffer FIRST if present
+        // This is critical for FLAC/Opus - MPV needs the header to identify the format
+        if let headerData = pendingCodecHeader {
+            print("MPV: Writing codec header (\(headerData.count) bytes) to buffer first")
+            ringBuffer.write(headerData)
+        }
         
         if pendingCodec == "pcm" {
             // MPV configuration for raw audio
@@ -166,7 +182,7 @@ class MPVController: NSObject, PlatformAudioPlayer {
             print("MPV: configured for \(pendingCodec) (auto demuxer)")
         }
         
-        // Now trigger loadfile - data is already in the buffer
+        // Now trigger loadfile - data is already in the buffer (header + first chunk)
         print("MPV: calling loadfile sendspin://stream")
         let result = mpv_command_string(mpv, "loadfile sendspin://stream replace")
         print("MPV: loadfile returned \(result)")
@@ -183,21 +199,24 @@ class MPVController: NSObject, PlatformAudioPlayer {
             swiftData[i] = UInt8(bitPattern: data.get(index: Int32(i)))
         }
         
-        // Write data first
-        ringBuffer.write(swiftData)
-        print("MPV: wrote \(size) bytes to buffer")
-        
         // Start MPV playback after first data arrives (ensures buffer has data for demuxer)
         if !streamStarted {
             streamStarted = true
-            print("MPV: First data received, starting MPV playback")
+            print("MPV: First data received (\(size) bytes), starting MPV playback")
+            
+            // Write the first chunk data AFTER startMpvPlayback writes the header
             startMpvPlayback()
         }
+        
+        // Write data to buffer
+        ringBuffer.write(swiftData)
+        print("MPV: wrote \(size) bytes to buffer")
     }
     
     func stopRawPcmStream() {
         print("MPV: Stopping stream")
         streamStarted = false
+        pendingCodecHeader = nil
         ringBuffer.close()  // Signal EOF to blocking read
         mpv_command_string(mpv, "stop")
         ringBuffer.clear()

@@ -20,6 +20,7 @@ actual class MediaPlayerController actual constructor(val platformContext: Platf
         sampleRate: Int,
         channels: Int,
         bitDepth: Int,
+        codecHeader: String?,
         listener: MediaPlayerListener
     ) {
         // TODO: Implement using javax.sound SourceDataLine or similar

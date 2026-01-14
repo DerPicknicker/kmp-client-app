@@ -10,6 +10,7 @@ interface PlatformAudioPlayer {
         sampleRate: Int,
         channels: Int,
         bitDepth: Int,
+        codecHeader: String?,
         listener: MediaPlayerListener
     )
     fun writeRawPcm(data: ByteArray)

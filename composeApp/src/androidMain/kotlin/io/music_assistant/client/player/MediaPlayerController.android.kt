@@ -193,12 +193,15 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         logger.i { "Sent error signal to stop sendspin stream. User should press play to resume on phone speakers." }
     }
 
-    actual fun prepareRawPcmStream(
+    actual fun prepareStream(
+        codec: AudioCodec,
         sampleRate: Int,
         channels: Int,
         bitDepth: Int,
+        codecHeader: String?,
         listener: MediaPlayerListener
     ) {
+        // Android ignores codecHeader - it's only for iOS/MPV pass-through
         logger.i { "Preparing raw PCM stream: ${sampleRate}Hz, ${channels}ch, ${bitDepth}bit" }
 
         // Store listener so we can signal errors (e.g., audio output disconnection)

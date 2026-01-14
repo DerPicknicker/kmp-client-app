@@ -100,6 +100,7 @@ class AudioStreamManager(
             sampleRate = config.sampleRate,
             channels = config.channels,
             bitDepth = config.bitDepth,
+            codecHeader = config.codecHeader,
             listener = object : MediaPlayerListener {
                 override fun onReady() {
                     logger.i { "MediaPlayer ready for stream ($outputCodec)" }
