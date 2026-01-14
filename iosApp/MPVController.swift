@@ -52,10 +52,17 @@ class MPVController: NSObject, PlatformAudioPlayer {
         setOptionString("vid", "no")
         setOptionString("ao", "audiounit") // Use AudioUnit on iOS
         
+        // Streaming optimizations - don't pause when buffer is low
+        setOptionString("cache-pause", "no")
+        setOptionString("demuxer-readahead-secs", "0.5")
+        setOptionString("audio-buffer", "0.1")
+        
         // Initialize
         let res = mpv_initialize(mpv)
         if res < 0 {
             print("Failed to initialize MPV: \(res)")
+        } else {
+            print("MPV initialized successfully")
         }
     }
     
@@ -101,9 +108,11 @@ class MPVController: NSObject, PlatformAudioPlayer {
     
     func handleStreamRead(buffer: UnsafeMutableRawPointer?, size: UInt64) -> Int64 {
         guard let buffer = buffer else { return 0 }
-        // Read from ring buffer
-        // Note: ringBuffer.read takes Int
+        // Read from ring buffer (blocking until data available)
         let bytesRead = ringBuffer.read(into: buffer, maxLength: Int(size))
+        if bytesRead > 0 {
+            print("MPV stream read: \(bytesRead) bytes")
+        }
         return Int64(bytesRead)
     }
 
@@ -154,6 +163,8 @@ class MPVController: NSObject, PlatformAudioPlayer {
     }
     
     func stopRawPcmStream() {
+        print("MPV: Stopping stream")
+        ringBuffer.close()  // Signal EOF to blocking read
         mpv_command_string(mpv, "stop")
         ringBuffer.clear()
     }
