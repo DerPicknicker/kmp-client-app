@@ -4,6 +4,10 @@ import AVFoundation
 
 /// Manages iOS Now Playing info (Control Center, Lock Screen)
 /// and remote command handling (play/pause/next/prev buttons)
+///
+/// IMPORTANT: This app uses MPV (libmpv) for audio playback, not AVPlayer.
+/// MPV uses its own AudioUnit output which may have different integration
+/// characteristics with iOS's Now Playing system.
 class NowPlayingManager {
     
     typealias CommandHandler = (String) -> Void
@@ -17,8 +21,10 @@ class NowPlayingManager {
     private var cachedArtwork: MPMediaItemArtwork?
     
     init() {
+        print("🎵 NowPlayingManager: Initializing...")
         configureAudioSession()
         setupRemoteCommands()
+        printDebugState("After init")
     }
     
     /// Configures the audio session for background playback
@@ -26,13 +32,20 @@ class NowPlayingManager {
     private func configureAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
-            // Strictly match reference implementation: .playback category, .default mode
-            // Removed .longFormAudio policy as it wasn't in the working reference
-            try session.setCategory(.playback, mode: .default)
+            print("🎵 NowPlayingManager: Current category BEFORE config: \(session.category.rawValue)")
+            print("🎵 NowPlayingManager: Current mode BEFORE config: \(session.mode.rawValue)")
+            print("🎵 NowPlayingManager: Is other audio playing: \(session.isOtherAudioPlaying)")
+            
+            // Use .playback category for music playback
+            try session.setCategory(.playback, mode: .default, options: [])
             try session.setActive(true)
-            print("NowPlayingManager: Audio session configured")
+            
+            print("🎵 NowPlayingManager: Audio session configured successfully")
+            print("🎵 NowPlayingManager: Category AFTER config: \(session.category.rawValue)")
+            print("🎵 NowPlayingManager: Mode AFTER config: \(session.mode.rawValue)")
+            print("🎵 NowPlayingManager: Session is active: true")
         } catch {
-            print("NowPlayingManager: Failed to configure audio session: \(error)")
+            print("🎵 NowPlayingManager: ❌ Failed to configure audio session: \(error)")
         }
     }
     
@@ -41,15 +54,19 @@ class NowPlayingManager {
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setActive(true, options: .notifyOthersOnDeactivation)
-            print("NowPlayingManager: Playback activated. Category: \(session.category.rawValue), Mode: \(session.mode.rawValue)")
+            print("🎵 NowPlayingManager: Playback activated")
+            print("🎵 NowPlayingManager: Category: \(session.category.rawValue)")
+            print("🎵 NowPlayingManager: Mode: \(session.mode.rawValue)")
+            print("🎵 NowPlayingManager: Route: \(session.currentRoute.outputs.map { $0.portName }.joined(separator: ", "))")
         } catch {
-            print("NowPlayingManager: Failed to activate playback: \(error)")
+            print("🎵 NowPlayingManager: ❌ Failed to activate playback: \(error)")
         }
     }
     
     /// Sets the handler for remote commands (play, pause, next, previous)
     func setCommandHandler(_ handler: @escaping CommandHandler) {
         self.commandHandler = handler
+        print("🎵 NowPlayingManager: Command handler set")
     }
     
     /// Updates the Now Playing info displayed in Control Center and Lock Screen
@@ -62,11 +79,22 @@ class NowPlayingManager {
         elapsedTime: Double,
         playbackRate: Double
     ) {
-        print("NowPlayingManager: updateNowPlayingInfo called - Title: \(title ?? "nil"), Rate: \(playbackRate)")
+        print("🎵 NowPlayingManager: ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("🎵 NowPlayingManager: updateNowPlayingInfo called")
+        print("🎵 NowPlayingManager:   Title: \(title ?? "nil")")
+        print("🎵 NowPlayingManager:   Artist: \(artist ?? "nil")")
+        print("🎵 NowPlayingManager:   Album: \(album ?? "nil")")
+        print("🎵 NowPlayingManager:   Duration: \(duration)")
+        print("🎵 NowPlayingManager:   Elapsed: \(elapsedTime)")
+        print("🎵 NowPlayingManager:   Rate: \(playbackRate)")
+        print("🎵 NowPlayingManager:   Thread: \(Thread.isMainThread ? "Main" : "Background")")
         
         let trackIdentifier = "\(title ?? "")-\(artist ?? "")-\(album ?? "")"
         
-        Task { @MainActor in
+        // Dispatch to main thread synchronously for immediate effect
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
             var nowPlayingInfo = [String: Any]()
             
             // Basic metadata
@@ -79,52 +107,91 @@ class NowPlayingManager {
             nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedTime
             nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = playbackRate
             
-            // 1. UPDATE IMMEDIATELY with metadata (so controls appear fast)
-            // Reuse existing cached artwork if effective
+            // Reuse existing cached artwork if available
             if trackIdentifier == self.lastTrackIdentifier, let artwork = self.cachedArtwork {
                 nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
+                print("🎵 NowPlayingManager: Using cached artwork")
             }
+            
+            // SET THE INFO
+            print("🎵 NowPlayingManager: Setting nowPlayingInfo with \(nowPlayingInfo.count) keys:")
+            for (key, value) in nowPlayingInfo {
+                if key == MPMediaItemPropertyArtwork {
+                    print("🎵 NowPlayingManager:   \(key): <MPMediaItemArtwork>")
+                } else {
+                    print("🎵 NowPlayingManager:   \(key): \(value)")
+                }
+            }
+            
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
             
-            // 2. Fetch new artwork if needed
+            // Verify it was set
+            let verifyInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo
+            print("🎵 NowPlayingManager: Verification - nowPlayingInfo has \(verifyInfo?.count ?? 0) keys")
+            
+            self.printDebugState("After update")
+            
+            // Fetch new artwork if needed
             if trackIdentifier != self.lastTrackIdentifier {
                 self.lastTrackIdentifier = trackIdentifier
                 self.cachedArtwork = nil
                 
                 if let artworkUrlString = artworkUrl, let url = URL(string: artworkUrlString) {
-                    print("NowPlayingManager: Loading artwork from \(artworkUrlString)")
-                    if let artwork = await self.loadArtworkAsync(from: url) {
-                        self.cachedArtwork = artwork
-                        // Update info again with artwork
-                        var updatedInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? nowPlayingInfo
-                        updatedInfo[MPMediaItemPropertyArtwork] = artwork
-                        MPNowPlayingInfoCenter.default().nowPlayingInfo = updatedInfo
-                        print("NowPlayingManager: Artwork loaded and cached. Info updated.")
+                    print("🎵 NowPlayingManager: Loading artwork from URL...")
+                    self.loadArtwork(from: url) { [weak self] artwork in
+                        guard let self = self, let artwork = artwork else { return }
+                        
+                        DispatchQueue.main.async {
+                            self.cachedArtwork = artwork
+                            var updatedInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+                            updatedInfo[MPMediaItemPropertyArtwork] = artwork
+                            MPNowPlayingInfoCenter.default().nowPlayingInfo = updatedInfo
+                            print("🎵 NowPlayingManager: Artwork loaded and applied")
+                        }
                     }
                 }
             }
         }
     }
     
-    // Explicitly used for frequent progress updates if needed, though usually system handles interpolation
-    // if rate is set correctly.
-    func updateElapsedTime(_ elapsedTime: Double, playbackRate: Double = 1.0) {
-        Task { @MainActor in
-            var nowPlayingInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-            nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedTime
-            nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = playbackRate
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+    /// Clears the Now Playing info
+    func clearNowPlayingInfo() {
+        print("🎵 NowPlayingManager: Clearing Now Playing info")
+        DispatchQueue.main.async { [weak self] in
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            self?.lastTrackIdentifier = nil
+            self?.cachedArtwork = nil
+            self?.printDebugState("After clear")
         }
     }
     
-    /// Clears the Now Playing info
-    func clearNowPlayingInfo() {
-        print("NowPlayingManager: Clearing Now Playing info")
-        Task { @MainActor in
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-            self.lastTrackIdentifier = nil
-            self.cachedArtwork = nil
+    // MARK: - Debug
+    
+    private func printDebugState(_ context: String) {
+        let session = AVAudioSession.sharedInstance()
+        let commandCenter = MPRemoteCommandCenter.shared()
+        let infoCenter = MPNowPlayingInfoCenter.default()
+        
+        print("🎵 NowPlayingManager: ═══ DEBUG STATE (\(context)) ═══")
+        print("🎵   AVAudioSession:")
+        print("🎵     Category: \(session.category.rawValue)")
+        print("🎵     Mode: \(session.mode.rawValue)")
+        print("🎵     Route outputs: \(session.currentRoute.outputs.map { $0.portName })")
+        print("🎵     Is other audio playing: \(session.isOtherAudioPlaying)")
+        print("🎵   MPRemoteCommandCenter:")
+        print("🎵     playCommand.isEnabled: \(commandCenter.playCommand.isEnabled)")
+        print("🎵     pauseCommand.isEnabled: \(commandCenter.pauseCommand.isEnabled)")
+        print("🎵     nextTrackCommand.isEnabled: \(commandCenter.nextTrackCommand.isEnabled)")
+        print("🎵   MPNowPlayingInfoCenter:")
+        if let info = infoCenter.nowPlayingInfo {
+            print("🎵     Has info: YES (\(info.count) keys)")
+            if let title = info[MPMediaItemPropertyTitle] {
+                print("🎵     Title: \(title)")
+            }
+        } else {
+            print("🎵     Has info: NO (nil)")
         }
+        print("🎵 ═══════════════════════════════════════════════")
     }
     
     // MARK: - Private
@@ -132,43 +199,60 @@ class NowPlayingManager {
     private func setupRemoteCommands() {
         let commandCenter = MPRemoteCommandCenter.shared()
         
+        print("🎵 NowPlayingManager: Setting up remote commands...")
+        
         // Helper to attach targets
-        func addTarget(_ command: MPRemoteCommand, cmd: String) {
+        func addTarget(_ command: MPRemoteCommand, cmd: String, name: String) {
             command.isEnabled = true
             command.addTarget { [weak self] _ in
+                print("🎵 NowPlayingManager: Remote command received: \(name)")
                 self?.commandHandler?(cmd)
                 return .success
             }
+            print("🎵 NowPlayingManager: Registered command: \(name)")
         }
         
-        addTarget(commandCenter.playCommand, cmd: "play")
-        addTarget(commandCenter.pauseCommand, cmd: "pause")
-        addTarget(commandCenter.togglePlayPauseCommand, cmd: "toggle_play_pause")
-        addTarget(commandCenter.nextTrackCommand, cmd: "next")
-        addTarget(commandCenter.previousTrackCommand, cmd: "previous")
+        addTarget(commandCenter.playCommand, cmd: "play", name: "play")
+        addTarget(commandCenter.pauseCommand, cmd: "pause", name: "pause")
+        addTarget(commandCenter.togglePlayPauseCommand, cmd: "toggle_play_pause", name: "togglePlayPause")
+        addTarget(commandCenter.nextTrackCommand, cmd: "next", name: "nextTrack")
+        addTarget(commandCenter.previousTrackCommand, cmd: "previous", name: "previousTrack")
         
         // Scrubbing
         commandCenter.changePlaybackPositionCommand.isEnabled = true
         commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
-             guard let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
-                 return .commandFailed
-             }
-             self?.commandHandler?("seek:\(positionEvent.positionTime)")
-             return .success
+            guard let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
+                return .commandFailed
+            }
+            print("🎵 NowPlayingManager: Remote command received: seek to \(positionEvent.positionTime)")
+            self?.commandHandler?("seek:\(positionEvent.positionTime)")
+            return .success
         }
+        print("🎵 NowPlayingManager: Registered command: changePlaybackPosition")
 
         commandCenter.skipForwardCommand.isEnabled = false
         commandCenter.skipBackwardCommand.isEnabled = false
+        
+        print("🎵 NowPlayingManager: Remote commands setup complete")
     }
     
-    private func loadArtworkAsync(from url: URL) async -> MPMediaItemArtwork? {
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            guard let image = UIImage(data: data) else { return nil }
-            return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-        } catch {
-            print("NowPlayingManager: Failed to load artwork: \(error)")
-            return nil
-        }
+    private func loadArtwork(from url: URL, completion: @escaping (MPMediaItemArtwork?) -> Void) {
+        URLSession.shared.dataTask(with: url) { data, _, error in
+            if let error = error {
+                print("🎵 NowPlayingManager: ❌ Failed to load artwork: \(error)")
+                completion(nil)
+                return
+            }
+            
+            guard let data = data, let image = UIImage(data: data) else {
+                print("🎵 NowPlayingManager: ❌ Failed to create image from data")
+                completion(nil)
+                return
+            }
+            
+            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            print("🎵 NowPlayingManager: ✅ Artwork created successfully (\(Int(image.size.width))x\(Int(image.size.height)))")
+            completion(artwork)
+        }.resume()
     }
 }
