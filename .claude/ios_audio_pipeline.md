@@ -35,11 +35,20 @@ The pipeline follows a **Protocol-Delegate pattern** bridging Kotlin Multiplatfo
 -   **Discovery**: Added `MdnsAdvertiser` expect class for iOS.
 -   **Interface**: Defined `PlatformAudioPlayer` interface for Swift to implement.
 
+### Codec Support (New)
+-   **Opus/FLAC**: Native decoding via MPV.
+    -   `AudioStreamManager` identifies if platform supports native decoding (via `PlatformCodecSupport`).
+    -   On iOS, decoding skips (`PassthroughDecoder`) and encoded bytes (Opus/FLAC) are passed to `MPVController`.
+    -   `MPVController.prepareStream` configures `demuxer=auto` for encoded streams, allowing MPV to detect and decode via FFmpeg.
+-   **PCM**: Legacy/Android support.
+    -   Decoded to PCM in Kotlin (Android) or received as PCM.
+    -   passed to `MPVController` which configures `demuxer=rawaudio`.
+
 ### Swift (`iosApp`)
 -   **`MPVController.swift`**:
     *   Sets up `mpv_handle`.
-    *   Configures options: `audio-client-name=sendspin`, `cache=no`, `audio-buffer=0.2`.
-    *   Defines `open_stream` to hook into MPV's stream layer using `memory://` or custom protocol logic (currently streaming via direct buffer feed conceptually).
+    *   **`prepareStream(codec:...)`**: Configures demuxer (`rawaudio` vs `auto`) based on codec.
+    *   Defines `open_stream` to hook into MPV's stream layer using custom `sendspin://` protocol.
 -   **`RingBuffer.swift`**:
     *   Thread-safe circular buffer using `UnsafeMutableRawPointer`.
     *   Handles `write` (from Kotlin) and `read` (from MPV C-callback).
@@ -50,12 +59,10 @@ The pipeline follows a **Protocol-Delegate pattern** bridging Kotlin Multiplatfo
 ## Current Status (2026-01-14)
 
 ### ✅ Completed
-1.  **Kotlin Compilation**: Fixed all KMP issues preventing iOS framework build.
-    *   Gradle task `compileKotlinIosSimulatorArm64` passes.
-2.  **Swift Implementation**:
-    *   `MPVController` and `RingBuffer` created.
-    *   `Libmpv` integration logic in place.
-3.  **Dependency Injection**: Wiring between Kotlin and Swift is implemented in `iOSApp.swift`.
+1.  **Kotlin Compilation**: Fixed all KMP issues.
+2.  **Swift Implementation**: `MPVController` fully implemented with `RingBuffer`.
+3.  **Codec Support**: Added native Opus/FLAC decoding support via MPV pass-through.
+4.  **Wiring**: `SendspinCapabilities` correctly reports partial native support.
 
 ### 🚧 Pending / To Verify
 1.  **Xcode Build**: User needs to build the iOS app in Xcode to link `ComposeApp.framework` and `Libmpv`.

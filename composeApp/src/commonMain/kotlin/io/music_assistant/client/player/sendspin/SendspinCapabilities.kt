@@ -1,12 +1,8 @@
 package io.music_assistant.client.player.sendspin
 
-import io.music_assistant.client.player.sendspin.model.AudioCodec
-import io.music_assistant.client.player.sendspin.model.AudioFormatSpec
-import io.music_assistant.client.player.sendspin.model.ClientHelloPayload
-import io.music_assistant.client.player.sendspin.model.DeviceInfo
-import io.music_assistant.client.player.sendspin.model.MetadataSupport
-import io.music_assistant.client.player.sendspin.model.PlayerSupport
-import io.music_assistant.client.player.sendspin.model.VersionedRole
+import io.music_assistant.client.player.sendspin.model.*
+import io.music_assistant.client.player.sendspin.isOpusPlaybackSupported
+import io.music_assistant.client.player.sendspin.isFlacPlaybackSupported
 
 object SendspinCapabilities {
     fun buildClientHello(config: SendspinConfig): ClientHelloPayload {
@@ -29,7 +25,7 @@ object SendspinCapabilities {
                         bitDepth = 16
                     )
                 ).toMutableList().apply {
-                    if (isNativeOpusDecodingSupported) {
+                    if (isOpusPlaybackSupported) {
                         add(
                             AudioFormatSpec(
                                 codec = AudioCodec.OPUS,
@@ -47,9 +43,16 @@ object SendspinCapabilities {
                             )
                         )
                     }
-                    if (isNativeFlacDecodingSupported) {
-                        // Add FLAC if supported natively
-                        // For now assuming we might want to announce it if supported
+                    if (isFlacPlaybackSupported) {
+                         // Add FLAC if supported
+                         add(
+                            AudioFormatSpec(
+                                codec = AudioCodec.FLAC,
+                                channels = 2,
+                                sampleRate = 48000,
+                                bitDepth = 16 // FLAC can vary but claiming standard support
+                            )
+                         )
                     }
                 },
                 bufferCapacity = config.bufferCapacityMicros,
