@@ -11,8 +11,10 @@ class NowPlayingManager {
     static let shared = NowPlayingManager()
     
     private var commandHandler: CommandHandler?
-    private var currentArtworkUrl: String?
-    private var artworkLoadTask: URLSessionDataTask?
+    
+    // State for caching
+    private var lastTrackIdentifier: String?
+    private var cachedArtwork: MPMediaItemArtwork?
     
     init() {
         configureAudioSession()
@@ -62,62 +64,66 @@ class NowPlayingManager {
         playbackRate: Double
     ) {
         print("NowPlayingManager: updateNowPlayingInfo called - Title: \(title ?? "nil"), Rate: \(playbackRate)")
-        var nowPlayingInfo: [String: Any] = [:]
         
-        // Basic metadata
-        if let title = title {
-            nowPlayingInfo[MPMediaItemPropertyTitle] = title
-        }
-        if let artist = artist {
-            nowPlayingInfo[MPMediaItemPropertyArtist] = artist
-        }
-        if let album = album {
-            nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = album
-        }
+        let trackIdentifier = "\(title ?? "")-\(artist ?? "")-\(album ?? "")"
         
-        // Playback info
-        nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = duration
-        nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedTime
-        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = playbackRate
-        
-        // Set info immediately (without artwork)
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
-        
-        // Load artwork asynchronously if URL changed
-        if let artworkUrl = artworkUrl {
-            if artworkUrl != currentArtworkUrl {
-                currentArtworkUrl = artworkUrl
-                loadArtwork(from: artworkUrl) { [weak self] image in
-                    guard let self = self, let image = image else { return }
-                    self.updateArtwork(image)
+        Task { @MainActor in
+            var nowPlayingInfo = [String: Any]()
+            
+            // Basic metadata
+            if let title = title { nowPlayingInfo[MPMediaItemPropertyTitle] = title }
+            if let artist = artist { nowPlayingInfo[MPMediaItemPropertyArtist] = artist }
+            if let album = album { nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = album }
+            
+            // Playback info
+            nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = duration
+            nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedTime
+            nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = playbackRate
+            
+            // Artwork handling (mimicking reference logic)
+            if trackIdentifier != self.lastTrackIdentifier {
+                self.lastTrackIdentifier = trackIdentifier
+                self.cachedArtwork = nil
+                
+                if let artworkUrlString = artworkUrl, let url = URL(string: artworkUrlString) {
+                    print("NowPlayingManager: Loading artwork from \(artworkUrlString)")
+                    if let artwork = await self.loadArtworkAsync(from: url) {
+                        self.cachedArtwork = artwork
+                        nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
+                        print("NowPlayingManager: Artwork loaded and cached")
+                    }
                 }
-            } else if let currentImage = self.currentImage {
-                 // Re-apply existing artwork if strictly needed, or just rely on the fact that we preserved it?
-                 // Actually, clearing and resetting might lose the artwork if we don't re-set it.
-                 // Ideally we cache the image.
-                 self.updateArtwork(currentImage)
+            } else {
+                // Use cached artwork
+                if let artwork = self.cachedArtwork {
+                    nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
+                }
             }
+            
+            // Atomic update
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
         }
     }
     
-    // Cache the current image to re-apply it easily
-    private var currentImage: UIImage?
-    
-    /// Updates just the elapsed time (for frequent progress updates)
+    // Explicitly used for frequent progress updates if needed, though usually system handles interpolation
+    // if rate is set correctly.
     func updateElapsedTime(_ elapsedTime: Double, playbackRate: Double = 1.0) {
-        var nowPlayingInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-        nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedTime
-        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = playbackRate
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+        Task { @MainActor in
+            var nowPlayingInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+            nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedTime
+            nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = playbackRate
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+        }
     }
     
     /// Clears the Now Playing info
     func clearNowPlayingInfo() {
         print("NowPlayingManager: Clearing Now Playing info")
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-        currentArtworkUrl = nil
-        currentImage = nil
-        artworkLoadTask?.cancel()
+        Task { @MainActor in
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            self.lastTrackIdentifier = nil
+            self.cachedArtwork = nil
+        }
     }
     
     // MARK: - Private
@@ -125,97 +131,43 @@ class NowPlayingManager {
     private func setupRemoteCommands() {
         let commandCenter = MPRemoteCommandCenter.shared()
         
-        // Play command
-        commandCenter.playCommand.isEnabled = true
-        commandCenter.playCommand.addTarget { [weak self] _ in
-            self?.commandHandler?("play")
-            return .success
+        // Helper to attach targets
+        func addTarget(_ command: MPRemoteCommand, cmd: String) {
+            command.isEnabled = true
+            command.addTarget { [weak self] _ in
+                self?.commandHandler?(cmd)
+                return .success
+            }
         }
         
-        // Pause command
-        commandCenter.pauseCommand.isEnabled = true
-        commandCenter.pauseCommand.addTarget { [weak self] _ in
-            self?.commandHandler?("pause")
-            return .success
-        }
+        addTarget(commandCenter.playCommand, cmd: "play")
+        addTarget(commandCenter.pauseCommand, cmd: "pause")
+        addTarget(commandCenter.togglePlayPauseCommand, cmd: "toggle_play_pause")
+        addTarget(commandCenter.nextTrackCommand, cmd: "next")
+        addTarget(commandCenter.previousTrackCommand, cmd: "previous")
         
-        // Toggle play/pause command
-        commandCenter.togglePlayPauseCommand.isEnabled = true
-        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
-            self?.commandHandler?("toggle_play_pause")
-            return .success
-        }
-        
-        // Next track command
-        commandCenter.nextTrackCommand.isEnabled = true
-        commandCenter.nextTrackCommand.addTarget { [weak self] _ in
-            self?.commandHandler?("next")
-            return .success
-        }
-        
-        // Previous track command
-        commandCenter.previousTrackCommand.isEnabled = true
-        commandCenter.previousTrackCommand.addTarget { [weak self] _ in
-            self?.commandHandler?("previous")
-            return .success
-        }
-        
-        // Change Playback Position (Scrubbing)
+        // Scrubbing
         commandCenter.changePlaybackPositionCommand.isEnabled = true
         commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
              guard let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
                  return .commandFailed
              }
-             // Send "seek:12.5"
              self?.commandHandler?("seek:\(positionEvent.positionTime)")
              return .success
         }
 
-        // Note: Skip forward/backward can be added if needed
         commandCenter.skipForwardCommand.isEnabled = false
         commandCenter.skipBackwardCommand.isEnabled = false
     }
     
-    private func loadArtwork(from urlString: String, completion: @escaping (UIImage?) -> Void) {
-        // Cancel any previous load
-        artworkLoadTask?.cancel()
-        
-        guard let url = URL(string: urlString) else {
-            print("NowPlayingManager: Invalid artwork URL: \(urlString)")
-            completion(nil)
-            return
+    private func loadArtworkAsync(from url: URL) async -> MPMediaItemArtwork? {
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard let image = UIImage(data: data) else { return nil }
+            return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        } catch {
+            print("NowPlayingManager: Failed to load artwork: \(error)")
+            return nil
         }
-        
-        print("NowPlayingManager: Loading artwork from \(urlString)")
-        
-        artworkLoadTask = URLSession.shared.dataTask(with: url) { data, response, error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    print("NowPlayingManager: Failed to load artwork: \(error.localizedDescription)")
-                    completion(nil)
-                    return
-                }
-                
-                guard let data = data, let image = UIImage(data: data) else {
-                    print("NowPlayingManager: Failed to decode artwork image")
-                    completion(nil)
-                    return
-                }
-                
-                print("NowPlayingManager: Artwork loaded successfully (\(image.size.width)x\(image.size.height))")
-                self.currentImage = image
-                completion(image)
-            }
-        }
-        artworkLoadTask?.resume()
-    }
-    
-    private func updateArtwork(_ image: UIImage) {
-        var nowPlayingInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-        
-        let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-        nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
-        
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
     }
 }
