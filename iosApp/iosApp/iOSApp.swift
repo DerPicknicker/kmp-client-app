@@ -5,7 +5,8 @@ import UIKit
 @main
 struct iOSApp: App {
     // Keep a strong reference to the player
-    private let player = MPVController()
+    // Using NativeAudioController for native iOS audio via AudioQueue
+    private let player = NativeAudioController()
 
     init() {
         // Register the Swift implementation with Kotlin
@@ -14,8 +15,8 @@ struct iOSApp: App {
         // Initialize NowPlayingManager early to configure AudioSession
         _ = NowPlayingManager.shared
         
-        // Required for apps using AudioUnit (like MPV) to appear in Control Center
-        // Must be called for remote control events to work with non-AVPlayer audio
+        // Required for apps to appear in Control Center
+        // Must be called for remote control events to work
         UIApplication.shared.beginReceivingRemoteControlEvents()
     }
 

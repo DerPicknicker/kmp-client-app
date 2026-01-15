@@ -26,6 +26,8 @@
 		C8FCC18F2F17C6A9005E8312 /* MPVController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FCC18D2F17C6A8005E8312 /* MPVController.swift */; };
 		C8FCC1902F17C6A9005E8312 /* RingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FCC18E2F17C6A8005E8312 /* RingBuffer.swift */; };
 		C8FCC1922F17C6A9005E8312 /* NowPlayingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FCC1912F17C6A9005E8312 /* NowPlayingManager.swift */; };
+		C8FCC1952F17E001005E8312 /* NativeAudioController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FCC1962F17E001005E8312 /* NativeAudioController.swift */; };
+		C8FCC1972F17E001005E8312 /* AudioDecoders.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FCC1982F17E001005E8312 /* AudioDecoders.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,6 +41,8 @@
 		C8FCC18D2F17C6A8005E8312 /* MPVController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MPVController.swift; sourceTree = "<group>"; };
 		C8FCC18E2F17C6A8005E8312 /* RingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RingBuffer.swift; sourceTree = "<group>"; };
 		C8FCC1912F17C6A9005E8312 /* NowPlayingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingManager.swift; sourceTree = "<group>"; };
+		C8FCC1962F17E001005E8312 /* NativeAudioController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAudioController.swift; sourceTree = "<group>"; };
+		C8FCC1982F17E001005E8312 /* AudioDecoders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDecoders.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -85,6 +89,8 @@
 				C8FCC18D2F17C6A8005E8312 /* MPVController.swift */,
 				C8FCC18E2F17C6A8005E8312 /* RingBuffer.swift */,
 				C8FCC1912F17C6A9005E8312 /* NowPlayingManager.swift */,
+				C8FCC1962F17E001005E8312 /* NativeAudioController.swift */,
+				C8FCC1982F17E001005E8312 /* AudioDecoders.swift */,
 				AB1DB47929225F7C00F7AF9C /* Configuration */,
 				7555FF7D242A565900829871 /* iosApp */,
 				7555FF7C242A565900829871 /* Products */,
@@ -235,6 +241,8 @@
 				C8FCC18F2F17C6A9005E8312 /* MPVController.swift in Sources */,
 				C8FCC1902F17C6A9005E8312 /* RingBuffer.swift in Sources */,
 				C8FCC1922F17C6A9005E8312 /* NowPlayingManager.swift in Sources */,
+				C8FCC1952F17E001005E8312 /* NativeAudioController.swift in Sources */,
+				C8FCC1972F17E001005E8312 /* AudioDecoders.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
