@@ -205,6 +205,30 @@ class AudioStreamManager(
             // Start adaptation thread
             startAdaptationThread()
 
+            // SYNC FAST-FORWARD: After prebuffer, skip to the first chunk that's "current"
+            // This handles the case where pause/next caused a time gap and all buffered
+            // chunks have timestamps in the past.
+            val syncStartTime = getCurrentTimeMicros()
+            var skippedChunks = 0
+            while (isActive && isStreaming) {
+                val chunk = audioBuffer.peek() ?: break
+                val chunkPlaybackTime = chunk.localTimestamp
+                val lateThreshold = adaptiveBufferManager.currentLateThreshold
+                
+                if (chunkPlaybackTime < syncStartTime - lateThreshold) {
+                    // This chunk is late - skip it
+                    audioBuffer.poll()
+                    skippedChunks++
+                } else {
+                    // Found a chunk that's current or early - start playing from here
+                    break
+                }
+            }
+            if (skippedChunks > 0) {
+                logger.i { "🔄 Sync fast-forward: skipped $skippedChunks late chunks to catch up" }
+                adaptiveBufferManager.reset() // Reset stats after bulk skip
+            }
+
             var chunksPlayed = 0
             var lastLogTime = getCurrentTimeMicros()
 
