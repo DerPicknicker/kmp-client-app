@@ -12,6 +12,9 @@ import io.music_assistant.client.player.sendspin.model.AudioCodec
  */
 actual class MediaPlayerController actual constructor(platformContext: PlatformContext) {
     private var isPrepared: Boolean = false
+    
+    // Callback for remote commands from Control Center
+    var onRemoteCommand: ((String) -> Unit)? = null
 
     // Sendspin streaming methods
     actual fun prepareStream(
@@ -26,6 +29,14 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
         if (player != null) {
             player.prepareStream(codec.name.lowercase(), sampleRate, channels, bitDepth, codecHeader, listener)
             isPrepared = true
+            
+            // Set up remote command handler for Control Center buttons
+            player.setRemoteCommandHandler(object : RemoteCommandHandler {
+                override fun onCommand(command: String) {
+                    println("🎵 MediaPlayerController: Remote command received: $command")
+                    onRemoteCommand?.invoke(command)
+                }
+            })
         } else {
             println("MediaPlayerController: No PlatformAudioPlayer registered!")
             listener.onError(Exception("Audio Player implementation missing"))

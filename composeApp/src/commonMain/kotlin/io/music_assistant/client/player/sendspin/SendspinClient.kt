@@ -140,6 +140,9 @@ class SendspinClient(
             
             // Monitor metadata for Now Playing updates (Control Center / Lock Screen)
             monitorMetadata()
+            
+            // Set up remote command handler for Control Center buttons (iOS)
+            setupRemoteCommandHandler()
 
         } catch (e: Exception) {
             logger.e(e) { "Failed to connect to server" }
@@ -379,6 +382,27 @@ class SendspinClient(
                 logger.w { "Unknown server command: ${playerCmd.command}" }
             }
         }
+    }
+
+    /**
+     * Sets up the remote command handler for iOS Control Center buttons.
+     * Maps button presses to server commands.
+     */
+    private fun setupRemoteCommandHandler() {
+        mediaPlayerController.onRemoteCommand = { command ->
+            logger.i { "🎵 Remote command from Control Center: $command" }
+            launch {
+                when (command) {
+                    "play" -> messageDispatcher?.sendCommand("play", null)
+                    "pause" -> messageDispatcher?.sendCommand("pause", null)
+                    "toggle_play_pause" -> messageDispatcher?.sendCommand("toggle", null)
+                    "next" -> messageDispatcher?.sendCommand("next", null)
+                    "previous" -> messageDispatcher?.sendCommand("previous", null)
+                    else -> logger.w { "Unknown remote command: $command" }
+                }
+            }
+        }
+        logger.i { "🎵 Remote command handler set up for Control Center" }
     }
 
     suspend fun sendCommand(command: String, value: CommandValue?) {
