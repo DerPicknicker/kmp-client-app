@@ -74,9 +74,9 @@ class PCMPassthroughDecoder: NativeAudioDecoder {
             let b2 = Int32(bytes[offset + 2])
             
             var sample = (b2 << 16) | (b1 << 8) | b0
-            // Sign extend from 24-bit
+            // Sign extend from 24-bit to 32-bit
             if sample & 0x800000 != 0 {
-                sample |= Int32(0xFF000000)
+                sample |= Int32(bitPattern: 0xFF000000)
             }
             // Shift to 32-bit range
             sample <<= 8
