@@ -387,17 +387,40 @@ class SendspinClient(
     /**
      * Sets up the remote command handler for iOS Control Center buttons.
      * Maps button presses to server commands.
+     * 
+     * IMPORTANT: For pause/next/prev, we use "optimistic flush" - immediately stop
+     * the local audio buffer before sending the command to the server. This makes
+     * the UI feel responsive instead of waiting for the server round-trip.
      */
     private fun setupRemoteCommandHandler() {
         mediaPlayerController.onRemoteCommand = { command: String ->
             logger.i { "🎵 Remote command from Control Center: $command" }
             launch {
                 when (command) {
-                    "play" -> messageDispatcher?.sendCommand("play", null)
-                    "pause" -> messageDispatcher?.sendCommand("pause", null)
-                    "toggle_play_pause" -> messageDispatcher?.sendCommand("toggle", null)
-                    "next" -> messageDispatcher?.sendCommand("next", null)
-                    "previous" -> messageDispatcher?.sendCommand("previous", null)
+                    "play" -> {
+                        messageDispatcher?.sendCommand("play", null)
+                    }
+                    "pause" -> {
+                        // Optimistic: flush buffer immediately for responsive feel
+                        logger.i { "🎵 Optimistic flush for PAUSE" }
+                        audioStreamManager.stopStream()
+                        messageDispatcher?.sendCommand("pause", null)
+                    }
+                    "toggle_play_pause" -> {
+                        messageDispatcher?.sendCommand("toggle", null)
+                    }
+                    "next" -> {
+                        // Optimistic: flush buffer immediately for responsive feel
+                        logger.i { "🎵 Optimistic flush for NEXT" }
+                        audioStreamManager.stopStream()
+                        messageDispatcher?.sendCommand("next", null)
+                    }
+                    "previous" -> {
+                        // Optimistic: flush buffer immediately for responsive feel
+                        logger.i { "🎵 Optimistic flush for PREVIOUS" }
+                        audioStreamManager.stopStream()
+                        messageDispatcher?.sendCommand("previous", null)
+                    }
                     else -> logger.w { "Unknown remote command: $command" }
                 }
             }
