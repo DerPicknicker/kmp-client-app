@@ -8,7 +8,7 @@ protocol NativeAudioDecoder {
 }
 
 /// Factory to create appropriate decoder
-extension NativeAudioDecoder {
+enum AudioDecoderFactory {
     static func create(
         codec: String,
         sampleRate: Int,

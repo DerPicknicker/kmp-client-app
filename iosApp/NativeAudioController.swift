@@ -67,7 +67,7 @@ class NativeAudioController: NSObject, PlatformAudioPlayer {
         
         // Create decoder for codec
         do {
-            decoder = try NativeAudioDecoder.create(
+            decoder = try AudioDecoderFactory.create(
                 codec: currentCodec,
                 sampleRate: Int(sampleRate),
                 channels: Int(channels),
@@ -233,7 +233,7 @@ class NativeAudioController: NSObject, PlatformAudioPlayer {
         if let data = pcmData {
             // Copy PCM data to buffer
             let copySize = min(data.count, Int(buffer.pointee.mAudioDataBytesCapacity))
-            data.withUnsafeBytes { srcBytes in
+            _ = data.withUnsafeBytes { srcBytes in
                 memcpy(buffer.pointee.mAudioData, srcBytes.baseAddress, copySize)
             }
             buffer.pointee.mAudioDataByteSize = UInt32(copySize)
