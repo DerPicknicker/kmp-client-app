@@ -14,8 +14,9 @@ class NativeAudioController: NSObject, PlatformAudioPlayer {
     // MARK: - Audio Buffer
     private var pcmBuffer: [Data] = []
     private let bufferLock = NSLock()
-    private let kNumberOfBuffers = 8
-    private let kBufferSize: UInt32 = 32768 // 32KB per buffer (256KB total)
+    private let kNumberOfBuffers = 5
+    private let kBufferSize: UInt32 = 16384 // 16KB per buffer
+
     
     // MARK: - Decoder
     private var decoder: NativeAudioDecoder?
