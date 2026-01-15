@@ -66,7 +66,10 @@ class NowPlayingManager {
     /// Sets the handler for remote commands (play, pause, next, previous)
     func setCommandHandler(_ handler: @escaping CommandHandler) {
         self.commandHandler = handler
-        print("🎵 NowPlayingManager: Command handler set")
+        print("🎵 NowPlayingManager: Command handler set - re-registering commands")
+        
+        // Re-register remote commands now that we have a handler
+        setupRemoteCommands()
     }
     
     /// Updates the Now Playing info displayed in Control Center and Lock Screen
@@ -201,8 +204,9 @@ class NowPlayingManager {
         
         print("🎵 NowPlayingManager: Setting up remote commands...")
         
-        // Helper to attach targets
+        // Helper to attach targets (removes old first to prevent duplicates)
         func addTarget(_ command: MPRemoteCommand, cmd: String, name: String) {
+            command.removeTarget(nil) // Remove any previous handlers
             command.isEnabled = true
             command.addTarget { [weak self] _ in
                 print("🎵 NowPlayingManager: Remote command received: \(name)")
