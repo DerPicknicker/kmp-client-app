@@ -388,38 +388,50 @@ class SendspinClient(
      * Sets up the remote command handler for iOS Control Center buttons.
      * Maps button presses to server commands.
      * 
-     * IMPORTANT: For pause/next/prev, we use "optimistic flush" - immediately stop
-     * the local audio buffer before sending the command to the server. This makes
-     * the UI feel responsive instead of waiting for the server round-trip.
+     * IMPORTANT: For pause, we use full stopStream() since we're stopping playback.
+     * For next/prev/seek, we use flushForTrackChange() which clears audio but keeps
+     * streaming active so the new track can start immediately.
      */
     private fun setupRemoteCommandHandler() {
         mediaPlayerController.onRemoteCommand = { command: String ->
             logger.i { "🎵 Remote command from Control Center: $command" }
             launch {
-                when (command) {
-                    "play" -> {
+                when {
+                    command == "play" -> {
                         messageDispatcher?.sendCommand("play", null)
                     }
-                    "pause" -> {
-                        // Optimistic: flush buffer immediately for responsive feel
+                    command == "pause" -> {
+                        // Full stop for pause - we're stopping playback entirely
                         logger.i { "🎵 Optimistic flush for PAUSE" }
                         audioStreamManager.stopStream()
                         messageDispatcher?.sendCommand("pause", null)
                     }
-                    "toggle_play_pause" -> {
+                    command == "toggle_play_pause" -> {
                         messageDispatcher?.sendCommand("toggle", null)
                     }
-                    "next" -> {
-                        // Optimistic: flush buffer immediately for responsive feel
-                        logger.i { "🎵 Optimistic flush for NEXT" }
-                        audioStreamManager.stopStream()
+                    command == "next" -> {
+                        // Light flush for next - keep streaming so new track can start
+                        logger.i { "🎵 Flush for NEXT (keeping stream active)" }
+                        audioStreamManager.flushForTrackChange()
                         messageDispatcher?.sendCommand("next", null)
                     }
-                    "previous" -> {
-                        // Optimistic: flush buffer immediately for responsive feel
-                        logger.i { "🎵 Optimistic flush for PREVIOUS" }
-                        audioStreamManager.stopStream()
+                    command == "previous" -> {
+                        // Light flush for previous - keep streaming so new track can start
+                        logger.i { "🎵 Flush for PREVIOUS (keeping stream active)" }
+                        audioStreamManager.flushForTrackChange()
                         messageDispatcher?.sendCommand("previous", null)
+                    }
+                    command.startsWith("seek:") -> {
+                        // Seek to position (in seconds)
+                        val positionSeconds = command.removePrefix("seek:").toDoubleOrNull()
+                        if (positionSeconds != null) {
+                            logger.i { "🎵 Seek to ${positionSeconds}s" }
+                            audioStreamManager.flushForTrackChange()
+                            // Send seek command with position in seconds
+                            messageDispatcher?.sendCommand("seek", CommandValue.DoubleValue(positionSeconds))
+                        } else {
+                            logger.w { "Invalid seek position: $command" }
+                        }
                     }
                     else -> logger.w { "Unknown remote command: $command" }
                 }

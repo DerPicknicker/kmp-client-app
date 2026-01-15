@@ -391,6 +391,28 @@ class AudioStreamManager(
         updateBufferState()
     }
 
+    /**
+     * Flush audio for track change (next/prev/seek).
+     * Clears buffer and stops native audio for immediate responsiveness,
+     * but keeps isStreaming=true so the playback thread can receive new chunks.
+     */
+    suspend fun flushForTrackChange() {
+        logger.i { "Flushing for track change (keeping stream active)" }
+        // Clear the audio buffer
+        audioBuffer.clear()
+        // Reset decoder for new track
+        audioDecoder?.reset()
+        // Stop native audio playback immediately (for responsiveness)
+        mediaPlayerController.stopRawPcmStream()
+        // Reset playback position
+        _playbackPosition.update { 0L }
+        droppedChunksCount = 0
+        // Reset adaptive buffer for new track
+        adaptiveBufferManager.reset()
+        updateBufferState()
+        // NOTE: isStreaming stays TRUE so we can receive new chunks
+    }
+
     suspend fun stopStream() {
         logger.i { "Stopping stream" }
         isStreaming = false
