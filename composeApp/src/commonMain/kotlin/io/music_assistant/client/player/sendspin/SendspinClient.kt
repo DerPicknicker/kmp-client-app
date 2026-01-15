@@ -389,7 +389,7 @@ class SendspinClient(
      * Maps button presses to server commands.
      */
     private fun setupRemoteCommandHandler() {
-        mediaPlayerController.onRemoteCommand = { command ->
+        mediaPlayerController.onRemoteCommand = { command: String ->
             logger.i { "🎵 Remote command from Control Center: $command" }
             launch {
                 when (command) {

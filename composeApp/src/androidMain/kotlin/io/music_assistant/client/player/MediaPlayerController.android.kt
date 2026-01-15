@@ -23,6 +23,9 @@ import io.music_assistant.client.player.sendspin.model.AudioCodec
  * Built-in player (ExoPlayer) has been removed - Sendspin is now the only playback method.
  */
 actual class MediaPlayerController actual constructor(platformContext: PlatformContext) {
+    
+    // Callback for remote commands - currently unused on Android (handled via different mechanism if needed)
+    actual var onRemoteCommand: ((String) -> Unit)? = null
     private val logger = Logger.withTag("MediaPlayerController")
     private val context: Context = platformContext.applicationContext
     private val audioManager: AudioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager

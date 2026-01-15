@@ -14,7 +14,7 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
     private var isPrepared: Boolean = false
     
     // Callback for remote commands from Control Center
-    var onRemoteCommand: ((String) -> Unit)? = null
+    actual var onRemoteCommand: ((String) -> Unit)? = null
 
     // Sendspin streaming methods
     actual fun prepareStream(

@@ -11,6 +11,10 @@ import io.music_assistant.client.player.sendspin.model.AudioCodec
  * TODO: Implement using javax.sound SourceDataLine or similar
  */
 actual class MediaPlayerController actual constructor(val platformContext: PlatformContext) {
+    
+    // Callback for remote commands
+    actual var onRemoteCommand: ((String) -> Unit)? = null
+
     private var listener: MediaPlayerListener? = null
 
     // Sendspin streaming methods (stub)
