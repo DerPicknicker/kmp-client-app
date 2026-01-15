@@ -107,7 +107,9 @@ class NowPlayingManager {
             
             // Playback info
             nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = duration
-            nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedTime
+            // Clamp elapsed time to duration to prevent invalid state
+            let clampedElapsed = max(0, min(elapsedTime, duration))
+            nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = clampedElapsed
             nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = playbackRate
             
             // Reuse existing cached artwork if available

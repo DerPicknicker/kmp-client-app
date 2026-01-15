@@ -335,9 +335,10 @@ class MessageDispatcher(
                         // track_duration is in milliseconds, convert to seconds
                         val trackDurationMs = progress["track_duration"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
                         duration = trackDurationMs / 1000.0
-                        // track_progress is in milliseconds, convert to seconds
-                        val trackProgressMs = progress["track_progress"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
-                        elapsedTime = trackProgressMs / 1000.0
+                        // track_progress is in microseconds, convert to seconds
+                        // Note: track_duration is in milliseconds, but track_progress is in microseconds in the protocol V1
+                        val trackProgressUs = progress["track_progress"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+                        elapsedTime = trackProgressUs / 1000000.0
                         logger.d { "Extracted progress: duration=${duration}s, elapsed=${elapsedTime}s" }
                     }
                     
