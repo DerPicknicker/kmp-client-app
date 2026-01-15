@@ -5,9 +5,8 @@ import UIKit
 @main
 struct iOSApp: App {
     // Keep a strong reference to the player
-    // Using MPVController because AudioConverter doesn't support streaming FLAC/Opus decoding
-    // NativeAudioController would work for PCM-only or with external libraries (libFLAC, swift-opus)
-    private let player = MPVController()
+    // Using NativeAudioController with swift-opus and libFLAC for decoding
+    private let player = NativeAudioController()
 
     init() {
         // Register the Swift implementation with Kotlin
