@@ -282,7 +282,7 @@ class SendspinClient(
                 // Stop periodic state reporting
                 stopStateReporting()
                 // Clear Now Playing from Control Center / Lock Screen
-                mediaPlayerController.clearNowPlaying()
+                // mediaPlayerController.clearNowPlaying() // DISABLED: Keep metadata visible so user can resume
             }
         }
 
