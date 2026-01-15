@@ -26,6 +26,18 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlin.coroutines.CoroutineContext
 
+/**
+ * Queue command types that need to go through REST API
+ */
+sealed class QueueCommand {
+    data object Next : QueueCommand()
+    data object Previous : QueueCommand()
+    data object Play : QueueCommand()
+    data object Pause : QueueCommand()
+    data object TogglePlayPause : QueueCommand()
+    data class Seek(val positionSeconds: Double) : QueueCommand()
+}
+
 class SendspinClient(
     private val config: SendspinConfig,
     private val mediaPlayerController: MediaPlayerController
@@ -55,6 +67,13 @@ class SendspinClient(
     // MainDataSource should monitor this to pause the MA server player
     private val _playbackStoppedDueToError = MutableStateFlow<Throwable?>(null)
     val playbackStoppedDueToError: StateFlow<Throwable?> = _playbackStoppedDueToError.asStateFlow()
+
+    /**
+     * Callback for queue commands that need to go through REST API.
+     * MainDataSource sets this to route Control Center commands through playerAction().
+     * Sendspin protocol only supports volume/mute - queue commands must use REST API.
+     */
+    var onQueueCommand: ((QueueCommand) -> Unit)? = null
 
     // Track current volume/mute state
     // Initialize with current system volume (not hardcoded 100)
@@ -386,11 +405,14 @@ class SendspinClient(
 
     /**
      * Sets up the remote command handler for iOS Control Center buttons.
-     * Maps button presses to server commands.
      * 
-     * IMPORTANT: For pause, we use full stopStream() since we're stopping playback.
-     * For next/prev/seek, we use flushForTrackChange() which clears audio but keeps
-     * streaming active so the new track can start immediately.
+     * IMPORTANT: Queue commands (next/prev/play/pause/seek) MUST go through REST API,
+     * not Sendspin protocol. Sendspin only supports volume/mute commands.
+     * The onQueueCommand callback routes commands to MainDataSource.playerAction().
+     * 
+     * For pause and track changes, we use optimistic flush for immediate responsiveness:
+     * - pause: full stopStream() since we're stopping playback entirely
+     * - next/prev/seek: flushForTrackChange() which clears audio but keeps streaming active
      */
     private fun setupRemoteCommandHandler() {
         mediaPlayerController.onRemoteCommand = { command: String ->
@@ -398,37 +420,40 @@ class SendspinClient(
             launch {
                 when {
                     command == "play" -> {
-                        messageDispatcher?.sendCommand("play", null)
+                        // Route through REST API
+                        logger.i { "🎵 Sending PLAY via REST API" }
+                        onQueueCommand?.invoke(QueueCommand.Play)
                     }
                     command == "pause" -> {
-                        // Full stop for pause - we're stopping playback entirely
-                        logger.i { "🎵 Optimistic flush for PAUSE" }
+                        // Optimistic flush for immediate responsiveness
+                        logger.i { "🎵 Optimistic flush for PAUSE, sending via REST API" }
                         audioStreamManager.stopStream()
-                        messageDispatcher?.sendCommand("pause", null)
+                        onQueueCommand?.invoke(QueueCommand.Pause)
                     }
                     command == "toggle_play_pause" -> {
-                        messageDispatcher?.sendCommand("toggle", null)
+                        // Route through REST API
+                        logger.i { "🎵 Sending TOGGLE via REST API" }
+                        onQueueCommand?.invoke(QueueCommand.TogglePlayPause)
                     }
                     command == "next" -> {
-                        // Light flush for next - keep streaming so new track can start
-                        logger.i { "🎵 Flush for NEXT (keeping stream active)" }
+                        // Optimistic flush + route through REST API
+                        logger.i { "🎵 Flush for NEXT, sending via REST API" }
                         audioStreamManager.flushForTrackChange()
-                        messageDispatcher?.sendCommand("next", null)
+                        onQueueCommand?.invoke(QueueCommand.Next)
                     }
                     command == "previous" -> {
-                        // Light flush for previous - keep streaming so new track can start
-                        logger.i { "🎵 Flush for PREVIOUS (keeping stream active)" }
+                        // Optimistic flush + route through REST API
+                        logger.i { "🎵 Flush for PREVIOUS, sending via REST API" }
                         audioStreamManager.flushForTrackChange()
-                        messageDispatcher?.sendCommand("previous", null)
+                        onQueueCommand?.invoke(QueueCommand.Previous)
                     }
                     command.startsWith("seek:") -> {
-                        // Seek to position (in seconds)
+                        // Optimistic flush + route through REST API
                         val positionSeconds = command.removePrefix("seek:").toDoubleOrNull()
                         if (positionSeconds != null) {
-                            logger.i { "🎵 Seek to ${positionSeconds}s" }
+                            logger.i { "🎵 Flush for SEEK to ${positionSeconds}s, sending via REST API" }
                             audioStreamManager.flushForTrackChange()
-                            // Send seek command with position in seconds
-                            messageDispatcher?.sendCommand("seek", CommandValue.DoubleValue(positionSeconds))
+                            onQueueCommand?.invoke(QueueCommand.Seek(positionSeconds))
                         } else {
                             logger.w { "Invalid seek position: $command" }
                         }
