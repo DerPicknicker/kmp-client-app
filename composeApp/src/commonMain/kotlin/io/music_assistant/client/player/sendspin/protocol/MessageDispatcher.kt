@@ -293,11 +293,18 @@ class MessageDispatcher(
         logger.d { "Received session/update: ${message.payload.metadata?.title}" }
         // Update metadata if provided
         message.payload.metadata?.let { metadata ->
+            // Preserve existing progress values to avoid resetting progress bar to 0
+            val existingMetadata = _streamMetadata.value
+            val duration = metadata.trackDuration?.let { it / 1000.0 } ?: existingMetadata?.duration ?: 0.0
+            val elapsedTime = existingMetadata?.elapsedTime ?: 0.0
+            
             _streamMetadata.value = StreamMetadataPayload(
                 title = metadata.title,
                 artist = metadata.artist,
                 album = metadata.album,
-                artworkUrl = metadata.artworkUrl
+                artworkUrl = metadata.artworkUrl,
+                duration = duration,
+                elapsedTime = elapsedTime
             )
         }
     }
