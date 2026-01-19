@@ -2,7 +2,9 @@ package io.music_assistant.client.settings
 
 import com.russhwolf.settings.Settings
 import io.music_assistant.client.api.ConnectionInfo
+import io.music_assistant.client.player.sendspin.audio.Codec
 import io.music_assistant.client.ui.theme.ThemeSetting
+import io.music_assistant.client.utils.Codecs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -50,12 +52,8 @@ class SettingsRepository(
 
     fun updateToken(token: String?) {
         if (token != this._token.value) {
-            co.touchlab.kermit.Logger.e(">>> TOKEN UPDATE: ${this._token.value?.take(10)}... -> ${token?.take(10)}...")
             settings.putString("token", token ?: "")
             _token.update { token }
-            co.touchlab.kermit.Logger.e(">>> TOKEN UPDATED to: ${_token.value?.take(10)}...")
-        } else {
-            co.touchlab.kermit.Logger.e(">>> TOKEN UPDATE SKIPPED (same value): ${token?.take(10)}...")
         }
     }
 
@@ -126,5 +124,20 @@ class SettingsRepository(
     fun setSendspinPath(path: String) {
         settings.putString("sendspin_path", path)
         _sendspinPath.update { path }
+    }
+
+    private val _sendspinCodecPreference = MutableStateFlow(
+        Codec.valueOf(
+            settings.getString(
+                "sendspin_codec_preference",
+                (Codecs.list.getOrNull(0) ?: Codec.PCM).name
+            ).uppercase()
+        )
+    )
+    val sendspinCodecPreference = _sendspinCodecPreference.asStateFlow()
+
+    fun setSendspinCodecPreference(codec: Codec) {
+        settings.putString("sendspin_codec_preference", codec.name)
+        _sendspinCodecPreference.update { codec }
     }
 }

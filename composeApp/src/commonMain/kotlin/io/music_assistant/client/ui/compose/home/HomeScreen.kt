@@ -216,7 +216,7 @@ fun HomeScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .wrapContentHeight()
-                                .defaultMinSize(minHeight = 120.dp)
+                                .defaultMinSize(minHeight = 100.dp)
                                 .clickable { showPlayersView = true }
                                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                 .padding(top = 8.dp),
@@ -242,6 +242,9 @@ fun HomeScreen(
                                             playerPagerState = playerPagerState,
                                             playersState = state,
                                             serverUrl = serverUrl,
+                                            simplePlayerAction = { playerId, action ->
+                                                viewModel.playerAction(playerId, action)
+                                            },
                                             playerAction = { playerData, action ->
                                                 viewModel.playerAction(playerData, action)
                                             },
@@ -251,6 +254,7 @@ fun HomeScreen(
                                             onQueueExpandedSwitch = {
                                                 isQueueExpanded = !isQueueExpanded
                                             },
+                                            onGoToLibrary = { showPlayersView = false },
                                             onItemMoved = null,
                                             queueAction = { action -> viewModel.queueAction(action) },
                                             settingsAction = viewModel::openPlayerSettings,
@@ -309,6 +313,9 @@ fun HomeScreen(
                                             playerPagerState = playerPagerState,
                                             playersState = state,
                                             serverUrl = serverUrl,
+                                            simplePlayerAction = { playerId, action ->
+                                                viewModel.playerAction(playerId, action)
+                                            },
                                             playerAction = { playerData, action ->
                                                 viewModel.playerAction(playerData, action)
                                             },
@@ -318,6 +325,7 @@ fun HomeScreen(
                                             onQueueExpandedSwitch = {
                                                 isQueueExpanded = !isQueueExpanded
                                             },
+                                            onGoToLibrary = { showPlayersView = false },
                                             onItemMoved = { indexShift ->
                                                 val currentPlayer =
                                                     state.playerData[playerPagerState.currentPage].player

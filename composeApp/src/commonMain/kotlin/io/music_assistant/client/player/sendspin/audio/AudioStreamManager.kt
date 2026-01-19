@@ -7,8 +7,7 @@ import io.music_assistant.client.player.sendspin.BufferState
 import io.music_assistant.client.player.sendspin.ClockSynchronizer
 import io.music_assistant.client.player.sendspin.SyncQuality
 import io.music_assistant.client.player.sendspin.model.*
-import io.music_assistant.client.player.sendspin.isNativeOpusDecodingSupported
-import io.music_assistant.client.player.sendspin.isNativeFlacDecodingSupported
+import io.music_assistant.client.utils.audioDispatcher
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -60,9 +59,9 @@ class AudioStreamManager(
     private var isStreaming = false
     private var droppedChunksCount = 0
 
-
-
-// ...
+    // Buffer state update throttling (performance optimization)
+    private var lastBufferStateUpdate = 0L
+    private val bufferStateUpdateInterval = 100_000L // Update max every 100ms
 
     suspend fun startStream(config: StreamStartPlayer) {
         logger.i { "Starting stream: ${config.codec}, ${config.sampleRate}Hz, ${config.channels}ch, ${config.bitDepth}bit" }
@@ -84,13 +83,15 @@ class AudioStreamManager(
         )
         audioDecoder?.configure(formatSpec, config.codecHeader)
 
-        // Determine output codec (PCM or Passthrough)
-        val outputCodec = if (
-            (config.codec.equals("opus", ignoreCase = true) && !isNativeOpusDecodingSupported) ||
-            (config.codec.equals("flac", ignoreCase = true) && !isNativeFlacDecodingSupported)
-        ) {
+        // Determine output codec for MediaPlayerController
+        // iOS decoders are passthrough (return raw encoded data for MPV to handle)
+        // Android/Desktop decode to PCM
+        val decoder = audioDecoder
+        val outputCodec = if (decoder is PassthroughDecoder) {
+            // Passthrough decoder means native player handles codec decoding
             AudioCodec.valueOf(config.codec.uppercase())
         } else {
+            // After decoding, data is PCM
             AudioCodec.PCM
         }
 
@@ -128,30 +129,9 @@ class AudioStreamManager(
     }
 
     private fun createDecoder(config: StreamStartPlayer): AudioDecoder {
-        val codec = config.codec.lowercase()
+        val codec = codecByName(config.codec.uppercase())
         logger.i { "Creating decoder for codec: $codec" }
-
-        return when (codec) {
-            "pcm" -> {
-                logger.i { "Using PCM decoder (passthrough)" }
-                PcmDecoder()
-            }
-
-            "flac" -> {
-                logger.w { "FLAC decoder not yet implemented, server should send PCM" }
-                FlacDecoder()
-            }
-
-            "opus" -> {
-                logger.w { "Using Opus decoder" }
-                OpusDecoder()
-            }
-
-            else -> {
-                logger.w { "Unknown codec $codec, using PCM decoder" }
-                PcmDecoder()
-            }
-        }
+        return codec?.decoderInitializer?.invoke() ?: PcmDecoder()
     }
 
     suspend fun processBinaryMessage(data: ByteArray) {
@@ -179,10 +159,26 @@ class AudioStreamManager(
         // Convert server timestamp to local time
         val localTimestamp = clockSynchronizer.serverTimeToLocal(binaryMessage.timestamp)
 
-        // Create audio chunk
+        // DECODE IMMEDIATELY (producer pattern - prepare data ahead of time)
+        // This runs on Default dispatcher with buffer headroom - not time-critical
+        val decoder = audioDecoder ?: run {
+            logger.w { "No decoder available" }
+            return
+        }
+
+        val decodedPcm = try {
+            decoder.decode(binaryMessage.data)
+        } catch (e: Exception) {
+            logger.e(e) { "Error decoding audio chunk" }
+            return
+        }
+
+        logger.d { "Decoded chunk: ${binaryMessage.data.size} -> ${decodedPcm.size} PCM bytes" }
+
+        // Create audio chunk with DECODED PCM data
         val chunk = AudioChunk(
             timestamp = binaryMessage.timestamp,
-            data = binaryMessage.data,
+            data = decodedPcm,  // Store decoded PCM, not encoded!
             localTimestamp = localTimestamp
         )
 
@@ -196,8 +192,9 @@ class AudioStreamManager(
 
     private fun startPlaybackThread() {
         playbackJob?.cancel()
-        playbackJob = launch {
-            logger.i { "Starting playback thread" }
+        // Launch playback loop on high-priority audioDispatcher
+        playbackJob = CoroutineScope(audioDispatcher + SupervisorJob()).launch {
+            logger.i { "Starting playback thread on high-priority dispatcher" }
 
             // Wait for pre-buffer
             waitForPrebuffer()
@@ -243,14 +240,14 @@ class AudioStreamManager(
                             adaptiveBufferManager.recordUnderrun(getCurrentTimeMicros())
                             _bufferState.update { it.copy(isUnderrun = true) }
                         }
-                        delay(10) // Wait for more data
+                        delay(2) // Wait for more data (was 10ms, reduced for faster recovery)
                         continue
                     }
 
                     // Check sync quality
                     if (clockSynchronizer.currentQuality == SyncQuality.LOST) {
                         logger.w { "Clock sync lost, waiting..." }
-                        delay(100)
+                        delay(10) // Reduced from 100ms for faster recovery
                         continue
                     }
 
@@ -275,7 +272,7 @@ class AudioStreamManager(
                         chunkPlaybackTime > currentLocalTime + earlyThreshold -> {
                             // Chunk is too early, wait
                             val delayMs =
-                                ((chunkPlaybackTime - currentLocalTime) / 1000).coerceAtMost(100)
+                                ((chunkPlaybackTime - currentLocalTime) / 1000).coerceAtMost(20) // Was 100ms, reduced for lower latency
                             logger.d { "Chunk too early, waiting ${delayMs}ms (diff=${timeDiff / 1000}ms)" }
                             delay(delayMs)
                         }
@@ -312,10 +309,37 @@ class AudioStreamManager(
 
     private suspend fun waitForPrebuffer() {
         val threshold = adaptiveBufferManager.currentPrebufferThreshold
-        logger.i { "Waiting for prebuffer (threshold=${threshold/1000}ms)..." }
+        logger.i { "Waiting for prebuffer (threshold=${threshold / 1000}ms)..." }
+
+        val startTime = getCurrentTimeMicros()
+        val timeoutUs = 5_000_000L // 5 second timeout
+
         while (isActive && audioBuffer.getBufferedDuration() < threshold) {
+            // Check timeout
+            if (getCurrentTimeMicros() - startTime > timeoutUs) {
+                val bufferMs = audioBuffer.getBufferedDuration() / 1000
+                logger.w { "Prebuffer timeout after 5s (buffered=${bufferMs}ms, threshold=${threshold / 1000}ms)" }
+
+                // Emit error state for UI
+                _streamError.update {
+                    Exception("Prebuffer timeout - check network connection")
+                }
+
+                // Start playback with whatever we have (graceful degradation)
+                if (audioBuffer.getBufferedDuration() > 0) {
+                    logger.i { "Starting playback with partial buffer" }
+                    return
+                } else {
+                    // No data at all - stop stream
+                    logger.e { "No data received, stopping stream" }
+                    stopStream()
+                    return
+                }
+            }
+
             delay(50)
         }
+
         val bufferMs = audioBuffer.getBufferedDuration() / 1000
         val thresholdMs = threshold / 1000
         logger.i { "Prebuffer complete: ${bufferMs}ms (threshold=${thresholdMs}ms)" }
@@ -323,7 +347,8 @@ class AudioStreamManager(
 
     private fun startAdaptationThread() {
         adaptationJob?.cancel()
-        adaptationJob = launch {
+        // Use Default dispatcher to avoid consuming high-priority audio threads
+        adaptationJob = CoroutineScope(Dispatchers.Default + SupervisorJob()).launch {
             logger.i { "Starting adaptation thread" }
             while (isActive && isStreaming) {
                 try {
@@ -347,31 +372,41 @@ class AudioStreamManager(
 
     private fun playChunk(chunk: AudioChunk) {
         try {
-            // Decode audio
-            val decoder = audioDecoder ?: return
-            val decodedData = decoder.decode(chunk.data)
+            val pcmData = chunk.data
 
-            logger.d { "Decoded chunk: ${chunk.data.size} -> ${decodedData.size} PCM bytes" }
+            logger.d { "Writing ${pcmData.size} PCM bytes to AudioTrack" }
 
             // Write to MediaPlayerController
-            val written = mediaPlayerController.writeRawPcm(decodedData)
-            if (written < decodedData.size) {
-                logger.w { "Only wrote $written/${decodedData.size} bytes to AudioTrack" }
+            val written = mediaPlayerController.writeRawPcm(pcmData)
+            if (written < pcmData.size) {
+                logger.w { "Only wrote $written/${pcmData.size} bytes to AudioTrack" }
             } else {
                 logger.d { "Wrote $written bytes to AudioTrack successfully" }
             }
 
         } catch (e: Exception) {
-            logger.e(e) { "Error decoding chunk" }
+            logger.e(e) { "Error writing PCM chunk" }
         }
     }
 
     private suspend fun updateBufferState() {
+        val now = getCurrentTimeMicros()
         val bufferedDuration = audioBuffer.getBufferedDuration()
+        val isUnderrun = bufferedDuration == 0L && isStreaming
+
+        // Throttle updates to reduce GC pressure (max every 100ms)
+        // Exception: Always update on underrun state changes
+        if (now - lastBufferStateUpdate < bufferStateUpdateInterval &&
+            _bufferState.value.isUnderrun == isUnderrun) {
+            return // Skip update
+        }
+
+        lastBufferStateUpdate = now
+
         _bufferState.update {
             BufferState(
                 bufferedDuration = bufferedDuration,
-                isUnderrun = bufferedDuration == 0L && isStreaming,
+                isUnderrun = isUnderrun,
                 droppedChunks = droppedChunksCount,
                 // Adaptive metrics
                 targetBufferDuration = adaptiveBufferManager.targetBufferDuration,
@@ -466,3 +501,9 @@ class AudioStreamManager(
         supervisorJob.cancel()
     }
 }
+
+/**
+ * Marker interface for passthrough decoders that don't actually decode.
+ * Used by iOS where MPV handles the decoding.
+ */
+interface PassthroughDecoder

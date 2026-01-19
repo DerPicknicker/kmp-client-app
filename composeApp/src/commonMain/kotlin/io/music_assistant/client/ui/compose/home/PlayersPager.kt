@@ -6,7 +6,12 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -60,11 +66,13 @@ internal fun PlayersPager(
     playerPagerState: PagerState,
     playersState: HomeScreenViewModel.PlayersState.Data,
     serverUrl: String?,
+    simplePlayerAction: (String, PlayerAction) -> Unit,
     playerAction: (PlayerData, PlayerAction) -> Unit,
     onFavoriteClick: (AppMediaItem) -> Unit,
     showQueue: Boolean,
     isQueueExpanded: Boolean,
     onQueueExpandedSwitch: () -> Unit,
+    onGoToLibrary: () -> Unit,
     onItemMoved: ((Int) -> Unit)?,
     queueAction: (QueueAction) -> Unit,
     settingsAction: (String) -> Unit,
@@ -80,20 +88,64 @@ internal fun PlayersPager(
             onItemMoved = onItemMoved
         )
         HorizontalPager(
-            modifier = Modifier.wrapContentHeight(),
+            modifier = Modifier.wrapContentHeight()
+                .draggable(
+                    orientation = Orientation.Horizontal,
+                    state = rememberDraggableState { delta ->
+                        coroutineScope.launch {
+                            // Make it snappier by increasing sensitivity
+                            playerPagerState.scrollBy(-delta * 1.5f)
+                        }
+                    },
+                    onDragStopped = {
+                        // Snap to nearest page after drag ends
+                        coroutineScope.launch {
+                            val currentPage = playerPagerState.currentPage
+                            val currentPageOffset = playerPagerState.currentPageOffsetFraction
+
+                            // Determine target page based on offset
+                            val targetPage = when {
+                                currentPageOffset > 0.4f && currentPage < playerDataList.size - 1 -> currentPage + 1
+                                currentPageOffset < -0.4f && currentPage > 0 -> currentPage - 1
+                                else -> currentPage
+                            }
+
+                            playerPagerState.animateScrollToPage(targetPage)
+                        }
+                    }
+                ),
             state = playerPagerState,
             key = { page -> playerDataList.getOrNull(page)?.player?.id ?: page }
         ) { page ->
 
             val player = playerDataList.getOrNull(page) ?: return@HorizontalPager
+            val isLocalPlayer = player.playerId == playersState.localPlayerId
 
-            Column {
+            Column(
+                Modifier.background(
+                    brush = if (isLocalPlayer) {
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.surfaceContainerHigh,
+                                MaterialTheme.colorScheme.surfaceContainerLow
+                            )
+                        )
+                    } else {
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.surfaceContainerHigh,
+                                MaterialTheme.colorScheme.primaryContainer
+                            )
+                        )
+                    }
+                )
+            ) {
                 Box(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         modifier = Modifier.align(Alignment.Center),
-                        text = if (player.playerId == playersState.localPlayerId) "Local player" else player.player.name,
+                        text = if (isLocalPlayer) "Local player" else player.player.displayName,
                         style = MaterialTheme.typography.bodyLarge,
                         textAlign = TextAlign.Center,
                         fontWeight = FontWeight.Medium,
@@ -123,19 +175,16 @@ internal fun PlayersPager(
                     enter = fadeIn(tween(300)) + expandVertically(tween(300)),
                     exit = fadeOut(tween(200)) + shrinkVertically(tween(300))
                 ) {
-                    if (showQueue) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .wrapContentSize()
-                                .clickable { onQueueExpandedSwitch() }) {
-                            CompactPlayerItem(
-                                item = player,
-                                serverUrl = serverUrl,
-                                playerAction = playerAction,
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .wrapContentSize()
+                            .conditional(
+                                showQueue,
+                                { clickable { onQueueExpandedSwitch() } }
                             )
-                        }
-                    } else {
+                    ) {
                         CompactPlayerItem(
                             item = player,
                             serverUrl = serverUrl,
@@ -152,16 +201,18 @@ internal fun PlayersPager(
                             ifFalse = { wrapContentHeight() }
                         )
                 ) {
-
                     AnimatedVisibility(
                         visible = isQueueExpanded.takeIf { showQueue } == false,
                         enter = fadeIn(tween(300)) + expandVertically(tween(300)),
                         exit = fadeOut(tween(200)) + shrinkVertically(tween(300))
                     ) {
+
                         FullPlayerItem(
                             modifier = Modifier.fillMaxSize(),
                             item = player,
+                            isLocal = isLocalPlayer,
                             serverUrl = serverUrl,
+                            simplePlayerAction = simplePlayerAction,
                             playerAction = playerAction,
                             onFavoriteClick = onFavoriteClick,
                         )
@@ -171,11 +222,11 @@ internal fun PlayersPager(
                 if (
                     showQueue
                     && player.player.canSetVolume
-                    && player.player.volumeLevel != null
+                    && player.player.currentVolume != null
                 ) {
-                    if (player.playerId != playersState.localPlayerId) {
-                        var currentVolume by remember(player.player.volumeLevel) {
-                            mutableStateOf(player.player.volumeLevel)
+                    if (!isLocalPlayer) {
+                        var currentVolume by remember(player.player.currentVolume) {
+                            mutableStateOf(player.player.currentVolume)
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth().height(36.dp)
@@ -202,9 +253,15 @@ internal fun PlayersPager(
                                 valueRange = 0f..100f,
                                 onValueChange = {
                                     currentVolume = it
+                                },
+                                onValueChangeFinished = {
                                     playerAction(
                                         player,
-                                        PlayerAction.VolumeSet(it.toDouble())
+                                        if (player.groupChildren.none { it.isBound }) {
+                                            PlayerAction.VolumeSet(currentVolume.toDouble())
+                                        } else {
+                                            PlayerAction.GroupVolumeSet(currentVolume.toDouble())
+                                        }
                                     )
                                 },
                                 thumb = {
@@ -250,6 +307,7 @@ internal fun PlayersPager(
                         queue = queue,
                         isQueueExpanded = isQueueExpanded,
                         onQueueExpandedSwitch = { onQueueExpandedSwitch() },
+                        onGoToLibrary = onGoToLibrary,
                         serverUrl = serverUrl,
                         queueAction = queueAction,
                         players = playerDataList,
@@ -261,7 +319,8 @@ internal fun PlayersPager(
                                     playerPagerState.animateScrollToPage(targetIndex)
                                 }
                             }
-                        }
+                        },
+                        isCurrentPage = page == playerPagerState.currentPage
                     )
                 }
             }

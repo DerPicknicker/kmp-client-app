@@ -23,7 +23,10 @@ import io.music_assistant.client.data.model.server.ServerQueue
 import io.music_assistant.client.data.model.server.ServerQueueItem
 import io.music_assistant.client.data.model.server.events.MediaItemAddedEvent
 import io.music_assistant.client.data.model.server.events.MediaItemDeletedEvent
+import io.music_assistant.client.data.model.server.events.MediaItemPlayedEvent
 import io.music_assistant.client.data.model.server.events.MediaItemUpdatedEvent
+import io.music_assistant.client.data.model.server.events.PlayerAddedEvent
+import io.music_assistant.client.data.model.server.events.PlayerRemovedEvent
 import io.music_assistant.client.data.model.server.events.PlayerUpdatedEvent
 import io.music_assistant.client.data.model.server.events.QueueItemsUpdatedEvent
 import io.music_assistant.client.data.model.server.events.QueueTimeUpdatedEvent
@@ -47,6 +50,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,8 +58,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.coroutines.CoroutineContext
 
@@ -73,44 +79,84 @@ class MainDataSource(
     private val supervisorJob = SupervisorJob()
     override val coroutineContext: CoroutineContext = supervisorJob + Dispatchers.IO
 
-    private val _serverPlayers = MutableStateFlow<List<Player>>(emptyList())
+    private val _serverPlayers = MutableStateFlow<DataState<List<Player>>>(DataState.Loading())
     private val _queueInfos = MutableStateFlow<List<QueueInfo>>(emptyList())
     private val _providersIcons = MutableStateFlow<Map<String, ProviderIconModel>>(emptyMap())
 
-    private val _players =
-        combine(_serverPlayers, settings.playersSorting) { players, sortedIds ->
-            sortedIds?.let {
-                players.sortedBy { player ->
-                    sortedIds.indexOf(player.id).takeIf { it >= 0 }
-                        ?: Int.MAX_VALUE
-                }
-            } ?: players.sortedBy { player -> player.name }
+    // Position tracking for smooth local playback position calculation
+    private data class PositionTracker(
+        val queueId: String,
+        val basePosition: Double,  // Last known server position in seconds
+        val baseTimestamp: Long,   // System time when basePosition was captured
+        val isPlaying: Boolean,
+        val duration: Double?      // Track duration for clamping
+    ) {
+        fun calculateCurrentPosition(): Double {
+            if (!isPlaying) return basePosition
+            val elapsedSinceBase = (System.currentTimeMillis() - baseTimestamp) / 1000.0
+            val calculated = basePosition + elapsedSinceBase
+            return duration?.let { calculated.coerceAtMost(it) } ?: calculated
         }
+    }
 
-    private val _playersData = MutableStateFlow<List<PlayerData>>(emptyList())
+    private val _positionTrackers = MutableStateFlow<Map<String, PositionTracker>>(emptyMap())
+
+    private val _players =
+        combine(_serverPlayers, settings.playersSorting) { playersState, sortedIds ->
+            when (playersState) {
+                is DataState.Error,
+                is DataState.Loading,
+                is DataState.NoData -> playersState
+
+                is DataState.Data -> {
+                    val players = playersState.data
+                    DataState.Data(
+                        sortedIds?.let {
+                            players.sortedBy { player ->
+                                sortedIds.indexOf(player.id).takeIf { it >= 0 }
+                                    ?: Int.MAX_VALUE
+                            }
+                        } ?: players.sortedBy { player -> player.name }
+                    )
+                }
+            }
+
+        }.stateIn(
+            scope = this,
+            started = SharingStarted.Eagerly,
+            initialValue = DataState.Loading()
+        )
+
+    private val _playersData = MutableStateFlow<DataState<List<PlayerData>>>(DataState.Loading())
     val playersData = _playersData.asStateFlow()
 
-    val localPlayer = playersData.map { list ->
-        list.firstOrNull { it.player.id == settings.sendspinClientId.value }
-    }.stateIn(this, SharingStarted.Eagerly, null)
+    val localPlayer = playersData
+        .mapNotNull { it as? DataState.Data<List<PlayerData>> }
+        .map { it.data.firstOrNull { data -> data.player.id == settings.sendspinClientId.value } }
+        .stateIn(this, SharingStarted.Eagerly, null)
 
     val isAnythingPlaying =
-        playersData.map { it.any { data -> data.player.isPlaying } }
+        playersData
+            .mapNotNull { it as? DataState.Data<List<PlayerData>> }
+            .map { it.data.any { data -> data.player.isPlaying } }
             .stateIn(this, SharingStarted.Eagerly, false)
     val doesAnythingHavePlayableItem =
-        playersData.map { it.any { data -> data.queueInfo?.currentItem != null } }
+        playersData
+            .mapNotNull { it as? DataState.Data<List<PlayerData>> }
+            .map { it.data.any { data -> data.queueInfo?.currentItem != null } }
             .stateIn(this, SharingStarted.Eagerly, false)
 
     private val _selectedPlayerId = MutableStateFlow<String?>(null)
-    val selectedPlayerIndex = combine(_playersData, _selectedPlayerId) { list, selectedId ->
+    val selectedPlayerIndex = combine(_playersData, _selectedPlayerId) { listState, selectedId ->
         selectedId?.let { id ->
-            list.indexOfFirst { it.playerId == id }.takeIf { it >= 0 }
+            (listState as? DataState.Data)?.data?.indexOfFirst { it.playerId == id }
+                ?.takeIf { it >= 0 }
         }
     }.stateIn(this, SharingStarted.Eagerly, null)
 
     val selectedPlayer: PlayerData?
         get() = selectedPlayerIndex.value?.let { selectedIndex ->
-            _playersData.value.getOrNull(selectedIndex)
+            (_playersData.value as? DataState.Data)?.data?.getOrNull(selectedIndex)
         }
 
     fun providerIcon(provider: String): ProviderIconModel? =
@@ -120,28 +166,67 @@ class MainDataSource(
     private var updateJob: Job? = null
 
     init {
+        // Position calculation loop - runs independently to provide smooth position updates
+        launch {
+            while (isActive) {
+                // Update QueueInfo with latest calculated positions
+                _queueInfos.update { queues ->
+                    queues.map { queue ->
+                        val tracker = _positionTrackers.value[queue.id]
+                        if (tracker != null) {
+                            val calculatedPos = tracker.calculateCurrentPosition()
+                            queue.copy(elapsedTime = calculatedPos)
+                        } else {
+                            queue
+                        }
+                    }
+                }
+                delay(500L) // Update position twice per second for smooth progress
+            }
+        }
+
         launch {
             combine(
-                _players.debounce(500L),
-                _queueInfos.debounce(500L)
+                _players,
+                _queueInfos
             ) { players, queues -> Pair(players, queues) }
+                .debounce(50L) // Small debounce to batch rapid updates, but don't delay initial load
                 .collect { p ->
                     _playersData.update { oldValues ->
-                        p.first.map { player ->
-                            val newData = PlayerData(
-                                player,
-                                p.second.find { it.id == player.queueId }?.let { queueInfo ->
-                                    DataState.Data(
-                                        Queue(
-                                            info = queueInfo,
-                                            items = DataState.NoData()
+                        when (val playersState = p.first) {
+                            is DataState.Error -> DataState.Error()
+                            is DataState.Loading -> DataState.Loading()
+                            is DataState.NoData -> DataState.NoData()
+                            is DataState.Data -> {
+                                val groupedPlayersToHide = playersState.data
+                                    .map { (it.groupChildren ?: emptyList()) - it.id }
+                                    .flatten().toSet()
+                                val filteredPlayers = playersState.data
+                                    .filter { it.id !in groupedPlayersToHide }
+                                DataState.Data(
+                                    filteredPlayers.map { player ->
+                                        val newData = PlayerData(
+                                            player = player,
+                                            queue = p.second.find { it.id == player.queueId }
+                                                ?.let { queueInfo ->
+                                                    DataState.Data(
+                                                        Queue(
+                                                            info = queueInfo,
+                                                            items = DataState.NoData()
+                                                        )
+                                                    )
+                                                } ?: DataState.NoData(),
+                                            groupChildren = playersState.data
+                                                .mapNotNull { it.asBindFor(player) }
+
                                         )
-                                    )
-                                } ?: DataState.NoData()
-                            )
-                            val oldData =
-                                oldValues.firstOrNull { it.player.id == player.id }
-                            oldData?.updateFrom(newData) ?: newData
+                                        (oldValues as? DataState.Data)?.data
+                                            ?.firstOrNull { it.player.id == player.id }
+                                            ?.updateFrom(newData) ?: newData
+
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -152,12 +237,13 @@ class MainDataSource(
                     is SessionState.Connected -> {
                         watchJob = watchApiEvents()
                         if (it.dataConnectionState == DataConnectionState.Authenticated) {
+                            _serverPlayers.update { DataState.Loading() }
                             updateProvidersManifests()
                             initSendspinIfEnabled()
                             updatePlayersAndQueues()
                         } else {
                             stopSendspin()
-                            _serverPlayers.update { emptyList() }
+                            _serverPlayers.update { DataState.NoData() }
                             _queueInfos.update { emptyList() }
                             updateJob?.cancel()
                             updateJob = null
@@ -178,11 +264,12 @@ class MainDataSource(
                         updateJob = null
                         watchJob?.cancel()
                         watchJob = null
+                        _serverPlayers.update { DataState.Loading() }
                     }
 
                     is SessionState.Disconnected -> {
                         stopSendspin()
-                        _serverPlayers.update { emptyList() }
+                        _serverPlayers.update { DataState.NoData() }
                         _queueInfos.update { emptyList() }
                         updateJob?.cancel()
                         updateJob = null
@@ -193,18 +280,22 @@ class MainDataSource(
             }
         }
         launch {
-            playersData.collect { dataList ->
-                if (dataList.isNotEmpty()
-                    && dataList.none { data -> data.playerId == _selectedPlayerId.value }
+            playersData.mapNotNull { (it as? DataState.Data)?.data }.collect { playersList ->
+                // Auto-select first player if no player is selected
+                if (playersList.isNotEmpty()
+                    && playersList.none { data -> data.playerId == _selectedPlayerId.value }
                 ) {
-                    _selectedPlayerId.update { dataList.getOrNull(0)?.playerId }
+                    _selectedPlayerId.update { playersList.getOrNull(0)?.playerId }
                 }
-                updatePlayersAndQueues()
+                // Don't call updatePlayersAndQueues() here - it creates a reactive loop!
+                // Updates are triggered by sessionState changes and API events.
             }
         }
         launch {
-            selectedPlayerIndex.filterNotNull().collect {
-                refreshPlayerQueueItems(playersData.value[it])
+            selectedPlayerIndex.filterNotNull().collect { index ->
+                (playersData.value as? DataState.Data)?.data?.let { list ->
+                    refreshPlayerQueueItems(list[index])
+                }
             }
         }
 
@@ -262,6 +353,7 @@ class MainDataSource(
             deviceName = settings.sendspinDeviceName.value,
             enabled = true,
             bufferCapacityMicros = 500_000, // 500ms
+            codecPreference = settings.sendspinCodecPreference.value,
             serverHost = serverHost,
             serverPort = settings.sendspinPort.value,
             serverPath = settings.sendspinPath.value
@@ -302,6 +394,18 @@ class MainDataSource(
                     }
                 }
 
+                launch {
+                    // Monitor connection state and refresh player list when Sendspin connects
+                    // This ensures the local player appears immediately in the UI
+                    client.connectionState.collect { state ->
+                        if (state is SendspinConnectionState.Connected) {
+                            log.i { "Sendspin connected - refreshing player list" }
+                            delay(1000) // Give server a moment to register the player
+                            updatePlayersAndQueues()
+                        }
+                    }
+                }
+
                 client.start()
             }
 
@@ -329,6 +433,99 @@ class MainDataSource(
 
     fun selectPlayer(player: Player) {
         _selectedPlayerId.update { player.id }
+    }
+
+    fun playerAction(playerId: String, action: PlayerAction) {
+        launch {
+            when (action) {
+                PlayerAction.TogglePlayPause -> {
+                    apiClient.sendRequest(
+                        Request.Player.simpleCommand(
+                            playerId = playerId,
+                            command = "play_pause"
+                        )
+                    )
+                }
+
+                PlayerAction.Next -> {
+                    apiClient.sendRequest(
+                        Request.Player.simpleCommand(playerId = playerId, command = "next")
+                    )
+                }
+
+                PlayerAction.Previous -> {
+                    apiClient.sendRequest(
+                        Request.Player.simpleCommand(
+                            playerId = playerId,
+                            command = "previous"
+                        )
+                    )
+                }
+
+                is PlayerAction.SeekTo -> {
+                    apiClient.sendRequest(
+                        Request.Player.seek(
+                            queueId = playerId,
+                            position = action.position
+                        )
+                    )
+                }
+
+                PlayerAction.VolumeDown -> apiClient.sendRequest(
+                    Request.Player.simpleCommand(
+                        playerId = playerId,
+                        command = "volume_down"
+                    )
+                )
+
+                PlayerAction.VolumeUp -> apiClient.sendRequest(
+                    Request.Player.simpleCommand(
+                        playerId = playerId,
+                        command = "volume_up"
+                    )
+                )
+
+
+                is PlayerAction.VolumeSet -> apiClient.sendRequest(
+                    Request.Player.setVolume(
+                        playerId = playerId,
+                        volumeLevel = action.level
+                    )
+                )
+
+                PlayerAction.GroupVolumeDown -> apiClient.sendRequest(
+                    Request.Player.simpleCommand(
+                        playerId = playerId,
+                        command = "group_volume_down"
+                    )
+                )
+
+                PlayerAction.GroupVolumeUp -> apiClient.sendRequest(
+                    Request.Player.simpleCommand(
+                        playerId = playerId,
+                        command = "group_volume_up"
+                    )
+                )
+
+                is PlayerAction.GroupVolumeSet -> apiClient.sendRequest(
+                    Request.Player.setGroupVolume(
+                        playerId = playerId,
+                        volumeLevel = action.level
+                    )
+                )
+
+                is PlayerAction.GroupManage -> apiClient.sendRequest(
+                    Request.Player.setGroupMembers(
+                        playerId = playerId,
+                        playersToAdd = action.toAdd,
+                        playersToRemove = action.toRemove
+                    )
+                )
+
+
+                else -> Unit
+            }
+        }
     }
 
     fun playerAction(data: PlayerData, action: PlayerAction) {
@@ -386,19 +583,58 @@ class MainDataSource(
                 )
 
                 PlayerAction.VolumeDown -> apiClient.sendRequest(
-                    Request.Player.simpleCommand(playerId = data.player.id, command = "volume_down")
+                    Request.Player.simpleCommand(
+                        playerId = data.playerId,
+                        command = "volume_down"
+                    )
                 )
 
                 PlayerAction.VolumeUp -> apiClient.sendRequest(
-                    Request.Player.simpleCommand(playerId = data.player.id, command = "volume_up")
+                    Request.Player.simpleCommand(
+                        playerId = data.playerId,
+                        command = "volume_up"
+                    )
+                )
+
+
+                is PlayerAction.VolumeSet -> apiClient.sendRequest(
+                    Request.Player.setVolume(
+                        playerId = data.playerId,
+                        volumeLevel = action.level
+                    )
+                )
+
+                PlayerAction.GroupVolumeDown -> apiClient.sendRequest(
+                    Request.Player.simpleCommand(
+                        playerId = data.playerId,
+                        command = "group_volume_down"
+                    )
+                )
+
+                PlayerAction.GroupVolumeUp -> apiClient.sendRequest(
+                    Request.Player.simpleCommand(
+                        playerId = data.playerId,
+                        command = "group_volume_up"
+                    )
+                )
+
+                is PlayerAction.GroupVolumeSet -> apiClient.sendRequest(
+                    Request.Player.setGroupVolume(
+                        playerId = data.playerId,
+                        volumeLevel = action.level
+                    )
                 )
 
                 PlayerAction.ToggleMute -> apiClient.sendRequest(
-                    Request.Player.setMute(playerId = data.player.id, !data.player.volumeMuted)
+                    Request.Player.setMute(playerId = data.playerId, !data.player.volumeMuted)
                 )
 
-                is PlayerAction.VolumeSet -> apiClient.sendRequest(
-                    Request.Player.setVolume(playerId = data.player.id, volumeLevel = action.level)
+                is PlayerAction.GroupManage -> apiClient.sendRequest(
+                    Request.Player.setGroupMembers(
+                        playerId = data.playerId,
+                        playersToAdd = action.toAdd,
+                        playersToRemove = action.toRemove
+                    )
                 )
             }
         }
@@ -469,17 +705,101 @@ class MainDataSource(
             apiClient.events
                 .collect { event ->
                     when (event) {
+                        is PlayerAddedEvent -> {
+                            val newPlayer = event.player()
+                            Logger.e("Player added: $newPlayer")
+                            if (newPlayer.shouldBeShown) {
+                                _serverPlayers.update { oldState ->
+                                    when (oldState) {
+                                        is DataState.Data -> {
+                                            val players = oldState.data
+                                            DataState.Data(
+                                                if (players.none { it.id == newPlayer.id }) {
+                                                    players + newPlayer
+                                                } else {
+                                                    // Player already exists, just update it
+                                                    players.map { if (it.id == newPlayer.id) newPlayer else it }
+                                                }
+                                            )
+                                        }
+
+                                        else -> oldState
+                                    }
+                                }
+                            }
+                        }
+
+                        is PlayerRemovedEvent -> {
+                            val playerId =
+                                event.objectId ?: event.data.takeIf { it.isNotEmpty() }
+                            if (playerId != null) {
+                                Logger.e("Player removed: $playerId")
+                                _serverPlayers.update { oldState ->
+                                    when (oldState) {
+                                        is DataState.Data -> {
+                                            DataState.Data(
+                                                oldState.data.filter { it.id != playerId }
+                                            )
+                                        }
+
+                                        else -> oldState
+                                    }
+                                }
+                            }
+                        }
+
                         is PlayerUpdatedEvent -> {
-                            _serverPlayers.value.takeIf { it.isNotEmpty() }?.let { players ->
-                                val data = event.player()
-                                _serverPlayers.update {
-                                    players.map { if (it.id == data.id) data else it }
+                            val data = event.player()
+                            Logger.e("Player updated: $data")
+                            _serverPlayers.update { oldState ->
+                                when (oldState) {
+                                    is DataState.Data -> {
+                                        // Update position tracker with new playing state
+                                        data.queueId?.let { queueId ->
+                                            _positionTrackers.update { trackers ->
+                                                trackers[queueId]?.let { tracker ->
+                                                    trackers + (queueId to tracker.copy(
+                                                        isPlaying = data.isPlaying
+                                                    ))
+                                                } ?: trackers
+                                            }
+                                        }
+                                        // State update
+                                        val players = oldState.data
+                                        if (players.isEmpty()) {
+                                            oldState
+                                        } else DataState.Data(
+                                            if (data.shouldBeShown) {
+                                                players.map { if (it.id == data.id) data else it }
+                                            } else {
+                                                players.filter { it.id != data.id }
+                                            })
+                                    }
+
+                                    else -> oldState
                                 }
                             }
                         }
 
                         is QueueUpdatedEvent -> {
                             val data = event.queue()
+                            Logger.e("Queue updated $data")
+
+                            // Update position tracker if elapsedTime is present
+                            data.elapsedTime?.let { elapsed ->
+                                val player =
+                                    (_serverPlayers.value as? DataState.Data)?.data?.find { it.queueId == data.id }
+                                _positionTrackers.update { trackers ->
+                                    trackers + (data.id to PositionTracker(
+                                        queueId = data.id,
+                                        basePosition = elapsed,
+                                        baseTimestamp = System.currentTimeMillis(),
+                                        isPlaying = player?.isPlaying ?: false,
+                                        duration = data.currentItem?.track?.duration
+                                    ))
+                                }
+                            }
+
                             _queueInfos.update { value ->
                                 value.map {
                                     if (it.id == data.id) data else it
@@ -489,21 +809,52 @@ class MainDataSource(
 
                         is QueueItemsUpdatedEvent -> {
                             val data = event.queue()
-                            playersData.value.firstOrNull {
-                                it.queueId == event.data.queueId
-                            }
-                                ?.let { refreshPlayerQueueItems(it) }
                             _queueInfos.update { value ->
                                 value.map {
                                     if (it.id == data.id) data else it
                                 }
                             }
+                            (playersData.value as? DataState.Data)?.data?.firstOrNull {
+                                it.queueId == data.id
+                            }?.let { refreshPlayerQueueItems(it, data) }
                         }
 
                         is QueueTimeUpdatedEvent -> {
+                            val oldQueue = _queueInfos.value.find { it.id == event.objectId }
+                            // Update position tracker
+                            event.objectId?.let { queueId ->
+                                val player =
+                                    (_serverPlayers.value as? DataState.Data)?.data?.find { it.queueId == queueId }
+                                _positionTrackers.update { trackers ->
+                                    trackers + (queueId to PositionTracker(
+                                        queueId = queueId,
+                                        basePosition = event.data,
+                                        baseTimestamp = System.currentTimeMillis(),
+                                        isPlaying = player?.isPlaying ?: false,
+                                        duration = oldQueue?.currentItem?.track?.duration
+                                    ))
+                                }
+                            }
+
                             _queueInfos.update { value ->
                                 value.map {
                                     if (it.id == event.objectId) it.copy(elapsedTime = event.data) else it
+                                }
+                            }
+                        }
+
+                        is MediaItemPlayedEvent -> {
+                            _queueInfos.value.find { queue ->
+                                queue.currentItem?.track?.uri == event.data.uri
+                            }?.id?.let {
+                                _positionTrackers.update { trackers ->
+                                    trackers + (it to PositionTracker(
+                                        queueId = it,
+                                        basePosition = event.data.secondsPlayed,
+                                        baseTimestamp = System.currentTimeMillis(),
+                                        isPlaying = event.data.isPlaying,
+                                        duration = event.data.duration
+                                    ))
                                 }
                             }
                         }
@@ -521,22 +872,33 @@ class MainDataSource(
                         is MediaItemDeletedEvent -> {
                             (event.data.toAppMediaItem() as? AppMediaItem.Track)
                                 ?.let { deletedTrack ->
-                                    _playersData.update { currentList ->
-                                        currentList.map { playerData ->
-                                            playerData.queueItems?.let { items ->
-                                                val updatedItems = items.filter {
-                                                    !it.track.hasAnyMappingFrom(deletedTrack)
-                                                }
-                                                playerData.copy(
-                                                    queue = (playerData.queue as? DataState.Data)?.let { queueData ->
-                                                        DataState.Data(
-                                                            queueData.data.copy(
-                                                                items = DataState.Data(updatedItems)
+                                    _playersData.update { currentState ->
+                                        when (currentState) {
+                                            is DataState.Error,
+                                            is DataState.Loading,
+                                            is DataState.NoData -> currentState
+
+                                            is DataState.Data -> DataState.Data(
+                                                currentState.data.map { playerData ->
+                                                    playerData.queueItems?.let { items ->
+                                                        val updatedItems = items.filter {
+                                                            !it.track.hasAnyMappingFrom(
+                                                                deletedTrack
                                                             )
+                                                        }
+                                                        playerData.copy(
+                                                            queue = (playerData.queue as? DataState.Data)?.let { queueData ->
+                                                                DataState.Data(
+                                                                    queueData.data.copy(
+                                                                        items = DataState.Data(
+                                                                            updatedItems
+                                                                        )
+                                                                    )
+                                                                )
+                                                            } ?: playerData.queue,
                                                         )
-                                                    } ?: playerData.queue,
-                                                )
-                                            } ?: playerData
+                                                    } ?: playerData
+                                                })
                                         }
                                     }
                                 }
@@ -548,37 +910,48 @@ class MainDataSource(
         }
 
     private fun updateMediaTrackInfo(newTrack: AppMediaItem.Track) {
-        _playersData.update { currentList ->
-            currentList.map { playerData ->
-                playerData.queueItems?.let { items ->
-                    val updatedItems = items.map { queueTrack ->
-                        if (queueTrack.track.hasAnyMappingFrom(newTrack)) {
-                            queueTrack.copy(
-                                track = newTrack
-                            )
-                        } else queueTrack
-                    }
-                    playerData.copy(
-                        queue = (playerData.queue as? DataState.Data)?.let { queueData ->
-                            DataState.Data(
-                                queueData.data.copy(
-                                    info = if (queueData.data.info.currentItem?.track
-                                            ?.hasAnyMappingFrom(newTrack) == true
-                                    ) {
-                                        queueData.data.info.copy(
-                                            currentItem = queueData.data.info.currentItem.copy(
-                                                track = newTrack
-                                                    .takeIf { it.hasAnyMappingFrom(queueData.data.info.currentItem.track) }
-                                                    ?: queueData.data.info.currentItem.track
-                                            )
+        _playersData.update { currentState ->
+            when (currentState) {
+                is DataState.Error,
+                is DataState.Loading,
+                is DataState.NoData -> currentState
+
+                is DataState.Data -> DataState.Data(
+                    currentState.data.map { playerData ->
+                        playerData.queueItems?.let { items ->
+                            val updatedItems = items.map { queueTrack ->
+                                if (queueTrack.track.hasAnyMappingFrom(newTrack)) {
+                                    queueTrack.copy(
+                                        track = newTrack
+                                    )
+                                } else queueTrack
+                            }
+                            playerData.copy(
+                                queue = (playerData.queue as? DataState.Data)?.let { queueData ->
+                                    DataState.Data(
+                                        queueData.data.copy(
+                                            info = if (queueData.data.info.currentItem?.track
+                                                    ?.hasAnyMappingFrom(newTrack) == true
+                                            ) {
+                                                queueData.data.info.copy(
+                                                    currentItem = queueData.data.info.currentItem.copy(
+                                                        track = newTrack
+                                                            .takeIf {
+                                                                it.hasAnyMappingFrom(
+                                                                    queueData.data.info.currentItem.track
+                                                                )
+                                                            }
+                                                            ?: queueData.data.info.currentItem.track
+                                                    )
+                                                )
+                                            } else queueData.data.info,
+                                            items = DataState.Data(updatedItems),
                                         )
-                                    } else queueData.data.info,
-                                    items = DataState.Data(updatedItems),
-                                )
+                                    )
+                                } ?: playerData.queue,
                             )
-                        } ?: playerData.queue,
-                    )
-                } ?: playerData
+                        } ?: playerData
+                    })
             }
         }
     }
@@ -590,7 +963,7 @@ class MainDataSource(
                 .resultAs<List<ServerPlayer>>()?.map { it.toPlayer() }
                 ?.let { list ->
                     _serverPlayers.update {
-                        list.filter { it.shouldBeShown }
+                        DataState.Data(list.filter { it.shouldBeShown })
                     }
                 }
         }
@@ -598,6 +971,23 @@ class MainDataSource(
             apiClient.sendRequest(Request.Queue.all())
                 .resultAs<List<ServerQueue>>()?.map { it.toQueue() }?.let { list ->
                     _queueInfos.update { list }
+
+                    // Initialize position trackers from initial queue data
+                    list.forEach { queue ->
+                        queue.elapsedTime?.let { elapsed ->
+                            val player =
+                                (_serverPlayers.value as? DataState.Data)?.data?.find { it.queueId == queue.id }
+                            _positionTrackers.update { trackers ->
+                                trackers + (queue.id to PositionTracker(
+                                    queueId = queue.id,
+                                    basePosition = elapsed,
+                                    baseTimestamp = System.currentTimeMillis(),
+                                    isPlaying = player?.isPlaying ?: false,
+                                    duration = queue.currentItem?.track?.duration
+                                ))
+                            }
+                        }
+                    }
                 }
         }
     }
@@ -623,27 +1013,44 @@ class MainDataSource(
         }
     }
 
-    private fun refreshPlayerQueueItems(data: PlayerData) {
+    private fun refreshPlayerQueueItems(
+        fullData: PlayerData,
+        forcedQueueData: QueueInfo? = null
+    ) {
         launch {
-            data.queueInfo?.let { queueInfo ->
+            (forcedQueueData ?: fullData.queueInfo)?.let { queueInfo ->
                 val queueTracks = apiClient.sendRequest(Request.Queue.items(queueInfo.id))
                     .resultAs<List<ServerQueueItem>>()?.mapNotNull { it.toQueueTrack() }
-                _playersData.update { currentList ->
-                    currentList.map { playerData ->
-                        if (playerData.player.id == data.player.id) {
-                            PlayerData(
-                                player = playerData.player,
-                                queue = DataState.Data(
-                                    Queue(
-                                        info = queueInfo,
-                                        items = queueTracks?.let { list -> DataState.Data(list) }
-                                            ?: DataState.Error()
-                                    )
-                                )
-                            )
+                _playersData.update { currentState ->
+                    when (currentState) {
+                        is DataState.Error,
+                        is DataState.Loading,
+                        is DataState.NoData -> currentState
 
-                        } else playerData
+                        is DataState.Data -> DataState.Data(
+                            currentState.data.map { playerData ->
+                                if (playerData.player.id == fullData.player.id) {
+                                    PlayerData(
+                                        player = playerData.player,
+                                        queue = DataState.Data(
+                                            Queue(
+                                                info = queueInfo,
+                                                items = queueTracks?.let { list ->
+                                                    DataState.Data(
+                                                        list
+                                                    )
+                                                }
+                                                    ?: DataState.Error()
+                                            )
+                                        ),
+                                        groupChildren = playerData.groupChildren
+                                    )
+
+                                } else playerData
+                            }
+                        )
                     }
+
                 }
             }
 

@@ -23,7 +23,6 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -124,7 +123,7 @@ class SendspinClient(
             webSocketHandler = wsHandler
 
             // Create message dispatcher
-            val capabilities = SendspinCapabilities.buildClientHello(config)
+            val capabilities = SendspinCapabilities.buildClientHello(config, config.codecPreference)
             val dispatcher = MessageDispatcher(
                 webSocketHandler = wsHandler,
                 clockSynchronizer = clockSynchronizer,

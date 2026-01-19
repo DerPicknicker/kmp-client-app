@@ -60,14 +60,10 @@ class AuthenticationManager(
                                     // Try auto-login with saved token (unless we're intentionally logging out)
                                     val loggingOut = isLoggingOut
                                     val tokenValue = settings.token.value
-                                    Logger.e(">>> AUTO-LOGIN CHECK: isLoggingOut=$loggingOut, token=${tokenValue?.take(10)}...")
                                     if (!loggingOut) {
                                         tokenValue?.let { token ->
-                                            Logger.e(">>> AUTO-LOGIN TRIGGERED - Authorizing with saved token")
                                             authorizeWithSavedToken(token)
-                                        } ?: Logger.e(">>> AUTO-LOGIN SKIPPED - No token found")
-                                    } else {
-                                        Logger.e(">>> AUTO-LOGIN BLOCKED - isLoggingOut flag is TRUE")
+                                        }
                                     }
                                 }
 
@@ -203,7 +199,6 @@ class AuthenticationManager(
                 ) {
                     // Connection is fully established
                     try {
-                        Logger.d("Authorizing with OAuth token")
                         serviceClient.authorize(token, isAutoLogin = false)
                         // Auth state will be updated via sessionState flow
                         return@launch
@@ -229,9 +224,7 @@ class AuthenticationManager(
 
     private suspend fun authorizeWithSavedToken(token: String) {
         try {
-            Logger.e(">>> AUTHORIZING with saved token: ${token.take(10)}...")
             serviceClient.authorize(token, isAutoLogin = true)
-            Logger.e(">>> AUTHORIZATION with saved token SUCCEEDED")
         } catch (e: Exception) {
             Logger.e(">>> AUTHORIZATION with saved token FAILED: ${e.message}")
             // Silent failure - user will see auth UI

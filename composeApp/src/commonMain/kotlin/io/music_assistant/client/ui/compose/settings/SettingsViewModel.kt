@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.music_assistant.client.api.ConnectionInfo
 import io.music_assistant.client.api.ServiceClient
+import io.music_assistant.client.player.sendspin.audio.Codec
 import io.music_assistant.client.settings.SettingsRepository
 import kotlinx.coroutines.launch
 
@@ -36,9 +37,11 @@ class SettingsViewModel(
     val sendspinDeviceName = settings.sendspinDeviceName
     val sendspinPort = settings.sendspinPort
     val sendspinPath = settings.sendspinPath
+    val sendspinCodecPreference = settings.sendspinCodecPreference
 
     fun setSendspinEnabled(enabled: Boolean) = settings.setSendspinEnabled(enabled)
     fun setSendspinDeviceName(name: String) = settings.setSendspinDeviceName(name)
     fun setSendspinPort(port: Int) = settings.setSendspinPort(port)
     fun setSendspinPath(path: String) = settings.setSendspinPath(path)
+    fun setSendspinCodecPreference(codec: Codec) = settings.setSendspinCodecPreference(codec)
 }

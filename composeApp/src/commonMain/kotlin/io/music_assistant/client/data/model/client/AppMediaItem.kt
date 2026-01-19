@@ -3,6 +3,7 @@ package io.music_assistant.client.data.model.client
 import io.ktor.http.URLBuilder
 import io.ktor.http.appendPathSegments
 import io.ktor.http.encodeURLQueryComponent
+import io.music_assistant.client.data.model.server.AudioFormat
 import io.music_assistant.client.data.model.server.MediaItemImage
 import io.music_assistant.client.data.model.server.MediaType
 import io.music_assistant.client.data.model.server.Metadata
@@ -31,14 +32,17 @@ abstract class AppMediaItem(
 
     val isInLibrary = provider == "library"
 
-    private val mappingsHashes = providerMappings?.map { it.hashCode() }?.toSet() ?: emptySet()
+    private val mappingsHashes =
+        providerMappings?.map { it.toHash().hashCode() }?.toSet() ?: emptySet()
 
     fun hasAnyMappingFrom(other: AppMediaItem): Boolean =
         mappingsHashes.intersect(other.mappingsHashes).isNotEmpty()
 
     fun hasAnyMappingFrom(other: ServerMediaItem): Boolean =
         mappingsHashes
-            .intersect(other.providerMappings?.map { it.hashCode() }?.toSet() ?: emptySet())
+            .intersect(
+                other.providerMappings?.map { it.toHash().hashCode() }?.toSet() ?: emptySet()
+            )
             .isNotEmpty()
 
     override fun equals(other: Any?): Boolean {
@@ -111,16 +115,16 @@ abstract class AppMediaItem(
 //        val musicbrainzId: String?,
         val items: List<AppMediaItem>? = null,
     ) : AppMediaItem(
-        itemId,
-        provider,
-        name,
-        null,
-        null,
-        null,
-        MediaType.ARTIST,
+        itemId = itemId,
+        provider = provider,
+        name = name,
+        providerMappings = null,
+        metadata = null,
+        favorite = null,
+        mediaType = MediaType.ARTIST,
         //sortName,
-        uri,
-        image,
+        uri = uri,
+        image = image,
         //isPlayable,
         //timestampAdded,
         //timestampModified,
@@ -150,16 +154,16 @@ abstract class AppMediaItem(
 //        timestampModified: Long?,
 //        val musicbrainzId: String?,
     ) : AppMediaItem(
-        itemId,
-        provider,
-        name,
-        providerMappings,
-        metadata,
-        favorite,
-        MediaType.ARTIST,
+        itemId = itemId,
+        provider = provider,
+        name = name,
+        providerMappings = providerMappings,
+        metadata = metadata,
+        favorite = favorite,
+        mediaType = MediaType.ARTIST,
         //sortName,
-        uri,
-        image,
+        uri = uri,
+        image = image,
         //isPlayable,
         //timestampAdded,
         //timestampModified,
@@ -185,16 +189,16 @@ abstract class AppMediaItem(
         val artists: List<Artist>?,
 //        val albumType: AlbumType?,
     ) : AppMediaItem(
-        itemId,
-        provider,
-        name,
-        providerMappings,
-        metadata,
-        favorite,
-        MediaType.ALBUM,
+        itemId = itemId,
+        provider = provider,
+        name = name,
+        providerMappings = providerMappings,
+        metadata = metadata,
+        favorite = favorite,
+        mediaType = MediaType.ALBUM,
         //sortName,
-        uri,
-        image,
+        uri = uri,
+        image = image,
         //isPlayable,
         //timestampAdded,
         //timestampModified,
@@ -228,23 +232,21 @@ abstract class AppMediaItem(
 // playlist track only
 //        val position: Int?,
     ) : AppMediaItem(
-        itemId,
-        provider,
-        name,
-        providerMappings,
-        metadata,
-        favorite,
-        MediaType.TRACK,
+        itemId = itemId,
+        provider = provider,
+        name = name,
+        providerMappings = providerMappings,
+        metadata = metadata,
+        favorite = favorite,
+        mediaType = MediaType.TRACK,
         //sortName,
-        uri,
-        image,
+        uri = uri,
+        image = image,
         //isPlayable,
         //timestampAdded,
         //timestampModified,
     ) {
         override val subtitle = artists?.joinToString(separator = ", ") { it.name }
-        val description =
-            "${artists?.joinToString(separator = ", ") { it.name } ?: "Unknown"} - $name"
     }
 
     class Playlist(
@@ -264,16 +266,16 @@ abstract class AppMediaItem(
         //val owner: String?,
         val isEditable: Boolean?,
     ) : AppMediaItem(
-        itemId,
-        provider,
-        name,
-        providerMappings,
-        metadata,
-        favorite,
-        MediaType.PLAYLIST,
+        itemId = itemId,
+        provider = provider,
+        name = name,
+        providerMappings = providerMappings,
+        metadata = metadata,
+        favorite = favorite,
+        mediaType = MediaType.PLAYLIST,
         //sortName,
-        uri,
-        image,
+        uri = uri,
+        image = image,
         //isPlayable,
         //timestampAdded,
         //timestampModified,
@@ -392,6 +394,17 @@ abstract class AppMediaItem(
                     albums.toAppMediaItemList() +
                     tracks.toAppMediaItemList() +
                     playlists.toAppMediaItemList()
+
+        val AudioFormat.description
+            get() = listOfNotNull(
+                contentType,
+                sampleRate?.let { "$it Hz" },
+                bitDepth?.let { "$it bit" },
+            ).joinToString()
+
+        private data class ProviderHash(val itemId: String, val providerInstance: String)
+
+        private fun ProviderMapping.toHash(): ProviderHash = ProviderHash(itemId, providerInstance)
     }
 
 // TODO Radio, audiobooks, podcasts

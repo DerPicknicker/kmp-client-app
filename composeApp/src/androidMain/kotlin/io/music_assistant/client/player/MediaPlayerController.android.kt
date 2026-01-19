@@ -28,7 +28,8 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
     actual var onRemoteCommand: ((String) -> Unit)? = null
     private val logger = Logger.withTag("MediaPlayerController")
     private val context: Context = platformContext.applicationContext
-    private val audioManager: AudioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val audioManager: AudioManager =
+        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     // AudioTrack for raw PCM streaming (Sendspin)
     private var audioTrack: AudioTrack? = null
@@ -78,6 +79,7 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
                 // Restore volume if it was ducked
                 applyVolume()
             }
+
             AudioManager.AUDIOFOCUS_LOSS -> {
                 logger.w { "AudioFocus lost permanently (Android Auto connected, another app took focus, etc.)" }
                 hasAudioFocus = false
@@ -85,6 +87,7 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
                 // This happens when Android Auto connects or another app takes over audio
                 handleAudioOutputDisconnected()
             }
+
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                 // Check if AudioTrack was just created (track transition)
                 // If so, ignore transient focus loss to prevent interrupting new track
@@ -100,6 +103,7 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
                 // Pause playback
                 audioTrack?.pause()
             }
+
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                 logger.i { "AudioFocus lost temporarily (can duck)" }
                 // Lower volume (duck) but continue playing
@@ -119,22 +123,13 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
             .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
             .build()
 
-        val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // Reuse existing request if we have one, or create new one
-            val request = audioFocusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                .setAudioAttributes(audioAttributes)
-                .setOnAudioFocusChangeListener(audioFocusChangeListener)
-                .build()
-            audioFocusRequest = request
-            audioManager.requestAudioFocus(request)
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager.requestAudioFocus(
-                audioFocusChangeListener,
-                AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN
-            )
-        }
+        // Reuse existing request if we have one, or create new one
+        val request = audioFocusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(audioAttributes)
+            .setOnAudioFocusChangeListener(audioFocusChangeListener)
+            .build()
+        audioFocusRequest = request
+        val result = audioManager.requestAudioFocus(request)
 
         hasAudioFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         logger.i { "Audio focus request result: ${if (hasAudioFocus) "GRANTED" else "DENIED"}" }
@@ -147,13 +142,8 @@ actual class MediaPlayerController actual constructor(platformContext: PlatformC
             return
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            audioFocusRequest?.let {
-                audioManager.abandonAudioFocusRequest(it)
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager.abandonAudioFocus(audioFocusChangeListener)
+        audioFocusRequest?.let {
+            audioManager.abandonAudioFocusRequest(it)
         }
 
         hasAudioFocus = false

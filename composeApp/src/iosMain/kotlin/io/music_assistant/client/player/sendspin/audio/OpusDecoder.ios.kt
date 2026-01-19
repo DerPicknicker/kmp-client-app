@@ -2,7 +2,7 @@ package io.music_assistant.client.player.sendspin.audio
 
 import io.music_assistant.client.player.sendspin.model.AudioFormatSpec
 
-actual class OpusDecoder : AudioDecoder {
+actual class OpusDecoder : AudioDecoder, PassthroughDecoder {
     override fun configure(config: AudioFormatSpec, codecHeader: String?) {
         // Pass-through: No configuration needed for raw stream passing
     }

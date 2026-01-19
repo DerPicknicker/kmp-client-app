@@ -56,6 +56,21 @@ High-Performance Audio Pipeline for iOS using `Libmpv` (via `MPVKit`) for FLAC/O
 ## Key Implementation Details
 
 ### Codec Support
+
+Per-platform codec support is defined via `Codecs.list`:
+
+| Platform | Supported Codecs | Implementation |
+|----------|------------------|----------------|
+| iOS      | FLAC, Opus, PCM  | PassthroughDecoder → MPV handles decoding |
+| Android  | FLAC, Opus, PCM  | Native decoders → PCM output |
+| Desktop  | Opus, PCM        | PcmDecoder/OpusDecoder → PCM output |
+
+The codec list is defined in platform-specific files:
+- `iosMain/.../utils/Codecs.ios.kt` → `listOf(Codec.FLAC, Codec.OPUS, Codec.PCM)`
+- `androidMain/.../utils/Codecs.android.kt` → `listOf(Codec.FLAC, Codec.OPUS, Codec.PCM)`
+- `desktopMain/.../utils/Codecs.desktop.kt` → `listOf(Codec.OPUS, Codec.PCM)`
+
+### Demuxer Settings
 | Codec | Demuxer Setting | Notes |
 |-------|-----------------|-------|
 | FLAC  | `lavf` | Requires codecHeader prepended to stream |
@@ -64,13 +79,15 @@ High-Performance Audio Pipeline for iOS using `Libmpv` (via `MPVKit`) for FLAC/O
 
 ### Critical Implementation Notes
 
-1. **Codec Header Prepending**: The server sends `codec_header` (base64 FLAC/Opus header) separately in `stream/start`. This MUST be decoded and written to the RingBuffer BEFORE any audio data.
+1. **Passthrough Decoder Pattern**: iOS decoders (`FlacDecoder.ios.kt`, `OpusDecoder.ios.kt`) implement `PassthroughDecoder` interface. The `AudioStreamManager` detects this and passes the original codec type (not PCM) to `MediaPlayerController.prepareStream()`, so MPV knows what format to expect.
 
-2. **Delayed loadfile**: MPV's `loadfile` must be called AFTER data is in the buffer, otherwise the demuxer times out and closes the stream.
+2. **Codec Header Prepending**: The server sends `codec_header` (base64 FLAC/Opus header) separately in `stream/start`. This MUST be decoded and written to the RingBuffer BEFORE any audio data.
 
-3. **Blocking RingBuffer Read**: MPV's stream callback expects blocking reads. The `RingBuffer.read()` uses `NSCondition` to wait for data.
+3. **Delayed loadfile**: MPV's `loadfile` must be called AFTER data is in the buffer, otherwise the demuxer times out and closes the stream.
 
-4. **Demuxer Configuration**: Do NOT use `demuxer=auto` (invalid). Use `lavf` (FFmpeg) or omit for default behavior.
+4. **Blocking RingBuffer Read**: MPV's stream callback expects blocking reads. The `RingBuffer.read()` uses `NSCondition` to wait for data.
+
+5. **Demuxer Configuration**: Do NOT use `demuxer=auto` (invalid). Use `lavf` (FFmpeg) or omit for default behavior.
 
 ### MPV Configuration Options
 ```swift
@@ -97,15 +114,18 @@ setOptionString("msg-level", "all=v")
 | `iosApp/iOSApp.swift` | Registers MPVController via PlatformPlayerProvider |
 | `composeApp/.../PlatformAudioPlayer.kt` | Kotlin interface for Swift implementation |
 | `composeApp/.../MediaPlayerController.ios.kt` | Delegates to PlatformPlayerProvider |
-| `composeApp/.../PlatformCodecSupport.kt` | isOpusPlaybackSupported=true, isFlacPlaybackSupported=true |
+| `composeApp/.../utils/Codecs.ios.kt` | Supported codecs: FLAC, Opus, PCM |
+| `composeApp/.../audio/FlacDecoder.ios.kt` | Passthrough decoder for FLAC |
+| `composeApp/.../audio/OpusDecoder.ios.kt` | Passthrough decoder for Opus |
 
-## Status: ✅ Working (2026-01-14)
+## Status: ✅ Working (2026-01-19)
 
 - [x] FLAC streaming playback
-- [x] Opus streaming playback (expected)
+- [x] Opus streaming playback
 - [x] PCM streaming playback
 - [x] Proper codec header handling
 - [x] MPV demuxer configuration
+- [x] Updated to new `Codecs.list` architecture
 
 ## Known Issues
 
